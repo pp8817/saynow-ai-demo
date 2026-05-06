@@ -494,18 +494,13 @@
       }
 
       function formatTurnSummary(body) {
-        const filledSlots = Object.keys(body.filled_slots || {});
         const missingSlots = body.missing_slots || [];
-        const totalSlots = filledSlots.length + missingSlots.length;
-        const progress =
-          totalSlots > 0 ? `${filledSlots.length}/${totalSlots}` : "0/0";
         const missingText = missingSlots.length
           ? missingSlots.map(slotLabel).join(", ")
           : "없음";
         return [
           body.assistant_message,
           "",
-          `상황 진행 ${progress}`,
           `부족한 정보: ${missingText}`,
         ].join("\n");
       }
