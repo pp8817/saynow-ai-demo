@@ -104,3 +104,32 @@ def test_submit_transcript_uses_transcript_slots_and_missing_slot_questions():
     assert final_turn.filled_slots == {"for_here_or_to_go": "for here"}
     assert final_turn.assistant_message == "Scenario cleared."
     assert service.get_session(session.id).result == "success"
+
+
+def test_submit_transcript_does_not_fill_unasked_slot_when_follow_up_is_missed():
+    service = SessionService(
+        evaluator=FakeEvaluator(
+            [
+                TurnEvaluation(
+                    filled_slots={"drink": "latte", "temperature": "iced"},
+                    follow_up_question="What size would you like?",
+                ),
+                TurnEvaluation(
+                    filled_slots={"for_here_or_to_go": "to go"},
+                    follow_up_question="What size would you like?",
+                ),
+            ]
+        )
+    )
+    session = service.start_session("cafe_order")
+
+    service.submit_transcript(session.id, "I want iced latte")
+    second_turn = service.submit_transcript(session.id, "to go")
+
+    assert second_turn.filled_slots == {}
+    assert second_turn.missing_slots == ("size", "for_here_or_to_go")
+    assert second_turn.assistant_message == "What size would you like?"
+    assert service.get_session(session.id).filled_slots == {
+        "drink": "latte",
+        "temperature": "iced",
+    }

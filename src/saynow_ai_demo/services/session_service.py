@@ -45,6 +45,7 @@ class SessionService:
         if session.result != "in_progress":
             raise ValueError(f"session already finished: {session.result}")
 
+        missing_slots_before_turn = get_missing_slots(session)
         evaluation = self._evaluator.evaluate(
             scenario=session.scenario,
             current_slots=dict(session.filled_slots),
@@ -55,6 +56,11 @@ class SessionService:
             **evaluation.filled_slots,
             **transcript_slots,
         }
+        turn_slots = _filter_slots_for_current_question(
+            session=session,
+            missing_slots_before_turn=missing_slots_before_turn,
+            turn_slots=turn_slots,
+        )
         newly_filled_slots = {
             slot: value
             for slot, value in turn_slots.items()
@@ -81,6 +87,28 @@ class SessionService:
         )
         session.turns.append(turn)
         return turn
+
+
+def _filter_slots_for_current_question(
+    *,
+    session: SessionState,
+    missing_slots_before_turn: tuple[str, ...],
+    turn_slots: dict[str, str],
+) -> dict[str, str]:
+    if not missing_slots_before_turn:
+        return {}
+
+    missing_slot_set = set(missing_slots_before_turn)
+    slots_for_missing_values = {
+        slot: value for slot, value in turn_slots.items() if slot in missing_slot_set
+    }
+    if not session.turns:
+        return slots_for_missing_values
+
+    expected_slot = missing_slots_before_turn[0]
+    if expected_slot not in slots_for_missing_values:
+        return {}
+    return slots_for_missing_values
 
 
 def _fallback_question(missing_slots: tuple[str, ...]) -> str:
