@@ -2,7 +2,7 @@ import json
 import re
 from typing import Any
 
-from saynow_ai_demo.domain.models import SessionState
+from saynow_ai_demo.domain.models import SessionState, Turn
 
 
 def build_feedback_prompt(session: SessionState) -> str:
@@ -28,9 +28,10 @@ Conversation JSON: {json.dumps(conversation, ensure_ascii=False)}
 Feedback rules:
 - Evaluate the whole conversation only after the session has ended.
 - Return one final total_understood_score, not a score for each turn.
-- For each user answer, show what a foreigner would likely understand and one better expression.
+- For each user answer, provide one better English expression and one Korean reason.
 - Do not mention pronunciation or intonation because this demo may use text input.
 - Korean fields must be concise and user-facing.
+- Do not include heard_as. The server generates heard_as from filled slots.
 
 Return only one JSON object with these keys:
 - total_understood_score: integer from 0 to 100
@@ -40,7 +41,6 @@ Return only one JSON object with these keys:
 Each turn_feedback item must have these keys:
 - user_said: exact user transcript
 - ai_question: assistant question or result after that answer
-- heard_as: Korean explanation that starts with "외국인에게는"
 - better_expression: one better English expression
 - reason: Korean reason for the better expression
 """
@@ -57,10 +57,7 @@ def parse_session_feedback(raw: str, session: SessionState) -> dict[str, Any]:
         "total_understood_score": _clamp_score(
             payload.get("total_understood_score", _fallback_total_score(session))
         ),
-        "summary": str(
-            payload.get("summary")
-            or "대화 전체를 기준으로 생성한 최종 피드백입니다."
-        ),
+        "summary": _summary_for_session(session),
         "turn_feedback": _normalize_turn_feedback(payload, session),
     }
     return feedback
@@ -70,12 +67,12 @@ def build_rule_based_feedback(session: SessionState) -> dict[str, Any]:
     return {
         "scenario_result": session.result,
         "total_understood_score": _fallback_total_score(session),
-        "summary": "대화 전체를 기준으로 생성한 기본 최종 피드백입니다.",
+        "summary": _summary_for_session(session),
         "turn_feedback": [
             {
                 "user_said": turn.transcript,
                 "ai_question": turn.assistant_message,
-                "heard_as": "외국인에게는 사용자가 상황에 필요한 정보를 전달하려는 것으로 들려요.",
+                "heard_as": _fallback_heard_as(turn),
                 "better_expression": _default_better_expression(session),
                 "reason": "더 자연스럽고 완성된 문장으로 말하면 실제 상황에서 더 안정적으로 전달됩니다.",
             }
@@ -103,9 +100,9 @@ def _normalize_turn_feedback(
                 "ai_question": str(
                     raw_item.get("ai_question") or turn.assistant_message
                 ),
-                "heard_as": str(
-                    raw_item.get("heard_as")
-                    or "외국인에게는 사용자가 상황에 필요한 정보를 전달하려는 것으로 들려요."
+                "heard_as": _normalize_heard_as(
+                    raw_item.get("heard_as"),
+                    turn,
                 ),
                 "better_expression": str(
                     raw_item.get("better_expression")
@@ -120,6 +117,95 @@ def _normalize_turn_feedback(
     return normalized
 
 
+def _normalize_heard_as(value: object, turn: Turn) -> str:
+    if turn.filled_slots:
+        return _fallback_heard_as(turn)
+    text = str(value or "").strip()
+    if not text or _is_awkward_heard_as(text):
+        return _fallback_heard_as(turn)
+    if text.startswith("외국인에게는"):
+        text = "외국인은" + text.removeprefix("외국인에게는")
+    if not text.startswith("외국인은"):
+        return _fallback_heard_as(turn)
+    return text
+
+
+def _is_awkward_heard_as(text: str) -> bool:
+    awkward_patterns = (
+        '"',
+        "“",
+        "”",
+        "라고 말",
+        "라고 표현",
+        "요청이 정확히 이해",
+        "요청이 잘 이해",
+    )
+    return any(pattern in text for pattern in awkward_patterns)
+
+
+def _fallback_heard_as(turn: Turn) -> str:
+    slots = turn.filled_slots
+    if not slots:
+        return "외국인은 사용자가 필요한 정보를 말하려는 중이라고 이해할 가능성이 높아요."
+    if "for_here_or_to_go" in slots:
+        destination = _korean_order_destination(slots["for_here_or_to_go"])
+        return f"외국인은 {destination}을 원한다는 뜻으로 이해할 가능성이 높아요."
+    if "temperature" in slots and "drink" in slots:
+        temperature = _korean_temperature(slots["temperature"])
+        drink = _korean_drink(slots["drink"])
+        return f"외국인은 {temperature} {drink}를 원한다는 뜻으로 이해할 가능성이 높아요."
+    if "temperature" in slots:
+        temperature = _korean_temperature(slots["temperature"])
+        return f"외국인은 {temperature} 음료를 원한다는 뜻으로 이해할 가능성이 높아요."
+    if "size" in slots:
+        size = _korean_size(slots["size"])
+        return f"외국인은 {size} 사이즈를 원한다는 뜻으로 이해할 가능성이 높아요."
+    if "drink" in slots:
+        drink = _korean_drink(slots["drink"])
+        return f"외국인은 {drink}를 주문하려는 뜻으로 이해할 가능성이 높아요."
+    return "외국인은 사용자가 상황에 필요한 정보를 전달하려는 뜻으로 이해할 가능성이 높아요."
+
+
+def _korean_size(value: str) -> str:
+    lower = value.lower()
+    if "small" in lower:
+        return "작은"
+    if "medium" in lower:
+        return "중간"
+    if "large" in lower:
+        return "큰"
+    return value
+
+
+def _korean_temperature(value: str) -> str:
+    lower = value.lower()
+    if "ice" in lower or "iced" in lower or "cold" in lower:
+        return "차가운"
+    if "hot" in lower or "warm" in lower:
+        return "따뜻한"
+    return value
+
+
+def _korean_order_destination(value: str) -> str:
+    lower = value.lower()
+    if "to go" in lower or "take" in lower:
+        return "포장"
+    if "here" in lower:
+        return "매장 이용"
+    return value
+
+
+def _korean_drink(value: str) -> str:
+    lower = value.lower()
+    if "latte" in lower:
+        return "라떼"
+    if "americano" in lower:
+        return "아메리카노"
+    if "coffee" in lower:
+        return "커피"
+    return value
+
+
 def _fallback_total_score(session: SessionState) -> int:
     if not session.turns:
         return 0
@@ -128,6 +214,14 @@ def _fallback_total_score(session: SessionState) -> int:
     if session.result == "failure":
         return 55
     return 0
+
+
+def _summary_for_session(session: SessionState) -> str:
+    if session.result == "success":
+        return "대화 전체를 보면 필요한 정보가 전달되어 시나리오를 완료했어요."
+    if session.result == "failure":
+        return "대화 전체를 보면 일부 정보가 부족해서 시나리오를 완료하지 못했어요."
+    return "세션이 끝나면 전체 대화를 기준으로 최종 피드백을 확인할 수 있어요."
 
 
 def _default_better_expression(session: SessionState) -> str:

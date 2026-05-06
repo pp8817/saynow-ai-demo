@@ -36,7 +36,6 @@ class FakeFeedbackLLMClient:
             {
               "user_said": "I want latte",
               "ai_question": "Would you like it hot or cold?",
-              "heard_as": "외국인에게는 라떼를 원한다는 뜻으로 들려요.",
               "better_expression": "Can I get a latte?",
               "reason": "주문 상황에서는 Can I get이 더 자연스럽습니다."
             }
@@ -93,5 +92,5 @@ def test_ollama_evaluator_generates_final_session_feedback():
     feedback = evaluator.generate_feedback(session)
 
     assert feedback["total_understood_score"] == 76
-    assert feedback["turn_feedback"][0]["heard_as"].startswith("외국인에게는")
+    assert feedback["turn_feedback"][0]["heard_as"].startswith("외국인은")
     assert "understood_score" not in feedback["turn_feedback"][0]

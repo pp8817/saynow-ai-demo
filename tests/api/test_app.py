@@ -51,7 +51,7 @@ class FakeFeedbackGenerator:
                 {
                     "user_said": turn.transcript,
                     "ai_question": turn.assistant_message,
-                    "heard_as": "외국인에게는 작은 아이스 라떼 주문으로 들려요.",
+                    "heard_as": "외국인은 작은 아이스 라떼 주문으로 이해할 가능성이 높아요.",
                     "better_expression": "Can I get a small iced latte?",
                     "reason": "카페에서는 Can I get이 더 자연스럽습니다.",
                 }
@@ -112,7 +112,7 @@ def test_feedback_api_returns_final_feedback_after_session_ends():
     body = response.json()
     assert body["total_understood_score"] == 84
     assert body["turn_feedback"][0]["user_said"] == "I want ice latte small size"
-    assert body["turn_feedback"][0]["heard_as"].startswith("외국인에게는")
+    assert body["turn_feedback"][0]["heard_as"].startswith("외국인은")
     assert "understood_score" not in body["turn_feedback"][0]
 
 
