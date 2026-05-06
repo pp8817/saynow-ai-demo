@@ -126,7 +126,7 @@ macOS 로컬 환경에서 `python` 명령이 없고 `python3`만 존재했다. �
 
 ---
 
-## 2026-05-06 - Ollama 미실행 시 local fallback evaluator 추가
+## 2026-05-06 - Ollama 미실행 시 local fallback evaluator 추가(폐기됨)
 
 ### 변경 전
 
@@ -155,6 +155,42 @@ Ollama 미실행 상태에서는 LLM 모델을 로드하지 않아 더 가볍게
 ### 구현 복잡도 영향
 
 fallback 규칙 코드가 추가되어 약간 복잡해졌다. 대신 데모 실행 안정성이 높아지고, Ollama 설치 전에도 테스트가 가능해졌다.
+
+---
+
+## 2026-05-06 - local fallback evaluator 제거 및 Ollama 경고 반환
+
+### 변경 전
+
+Ollama 호출이 실패하면 local rule-based fallback evaluator가 transcript 키워드를 기준으로 slot을 채우고 꼬리 질문을 생성했다.
+
+### 변경 후
+
+Ollama 호출이 실패하면 AI 평가를 진행하지 않고 `503` 응답으로 경고 문구를 반환한다.
+
+```text
+Ollama가 실행 중이 아니어서 AI 평가를 진행할 수 없습니다. `ollama serve` 실행 후 다시 시도하세요.
+```
+
+### 변경 이유
+
+이번 테스트의 목적은 fallback 규칙이 아니라 Ollama LLM을 활용한 실제 AI Workflow를 확인하는 것이다. fallback이 동작하면 사용자가 Ollama가 사용된 것으로 오해할 수 있어, 실패 상태를 명시적으로 보여주는 편이 더 정확하다.
+
+### 성능 영향
+
+Ollama가 실행 중일 때의 성능은 변하지 않는다. Ollama가 없을 때는 더 이상 임의 점수나 꼬리 질문을 생성하지 않으므로, 실제 AI 평가 품질과 fallback 품질이 섞이지 않는다.
+
+### 비용 영향
+
+변화 없음. 로컬 실행이므로 API 비용은 발생하지 않는다.
+
+### 리소스 영향
+
+Ollama 미실행 시 추가 모델이나 fallback 연산을 수행하지 않는다.
+
+### 구현 복잡도 영향
+
+fallback 규칙 코드가 제거되어 LLM adapter의 책임이 단순해졌다. 대신 API는 `LocalLLMUnavailableError`를 `503` 경고 응답으로 변환한다.
 
 ---
 

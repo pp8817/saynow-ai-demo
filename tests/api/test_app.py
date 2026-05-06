@@ -107,7 +107,7 @@ def test_index_serves_demo_page():
     assert "startSession" in response.text
 
 
-def test_text_turn_works_with_local_fallback_when_ollama_is_unavailable():
+def test_text_turn_returns_warning_when_ollama_is_unavailable():
     client = TestClient(
         create_app(evaluator=OllamaEvaluator(llm_client=FailingLLMClient()))
     )
@@ -120,8 +120,9 @@ def test_text_turn_works_with_local_fallback_when_ollama_is_unavailable():
         json={"transcript": "I want ice latte small size"},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 503
     body = response.json()
-    assert body["understood_score"] == 74
-    assert body["missing_slots"] == ["for_here_or_to_go"]
-    assert body["assistant_message"] == "Is that for here or to go?"
+    assert body["detail"] == (
+        "Ollama가 실행 중이 아니어서 AI 평가를 진행할 수 없습니다. "
+        "`ollama serve` 실행 후 다시 시도하세요."
+    )

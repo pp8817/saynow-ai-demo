@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
+from saynow_ai_demo.adapters.llm import LocalLLMUnavailableError
 from saynow_ai_demo.adapters.stt import STTAdapter
 from saynow_ai_demo.api.schemas import (
     SessionResponse,
@@ -82,6 +83,8 @@ def _submit_transcript_response(
     try:
         turn = service.submit_transcript(session_id, transcript)
         session = service.get_session(session_id)
+    except LocalLLMUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return TurnResponse(
