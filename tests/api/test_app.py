@@ -89,3 +89,13 @@ def test_submit_audio_turn_api_uses_stt_adapter():
     body = response.json()
     assert body["transcript"] == "I want ice latte small size"
     assert body["assistant_message"] == "Is that for here or to go?"
+
+
+def test_index_serves_demo_page():
+    client = TestClient(create_app(evaluator=FakeEvaluator()))
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Say Now AI Demo" in response.text
+    assert "startSession" in response.text

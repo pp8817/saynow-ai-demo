@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Say Now AI Demo</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f4ef;
+        --panel: #fffaf3;
+        --panel-strong: #ffffff;
+        --text: #26211d;
+        --muted: #716960;
+        --line: #dfd4c7;
+        --orange: #ff8c2e;
+        --orange-dark: #d96413;
+        --green: #198754;
+        --red: #b42318;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-strong);
+        color: var(--text);
+        cursor: pointer;
+        min-height: 40px;
+        padding: 0 14px;
+      }
+
+      button.primary {
+        border-color: var(--orange);
+        background: var(--orange);
+        color: #ffffff;
+        font-weight: 700;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        border-right: 1px solid var(--line);
+        padding: 24px;
+      }
+
+      .brand {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-bottom: 28px;
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: 26px;
+        letter-spacing: 0;
+      }
+
+      .brand span {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .status {
+        display: grid;
+        gap: 12px;
+        margin-top: 24px;
+      }
+
+      .status-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 10px;
+      }
+
+      .status-row dt {
+        color: var(--muted);
+      }
+
+      .status-row dd {
+        margin: 0;
+        font-weight: 700;
+        text-align: right;
+      }
+
+      .main {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        min-width: 0;
+        padding: 24px;
+        gap: 16px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .topbar h2 {
+        margin: 0;
+        font-size: 20px;
+      }
+
+      .conversation {
+        display: grid;
+        align-content: start;
+        gap: 12px;
+        min-height: 360px;
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 16px;
+      }
+
+      .message {
+        max-width: 760px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-strong);
+        padding: 12px 14px;
+      }
+
+      .message.user {
+        justify-self: end;
+        border-color: #ffd2ad;
+      }
+
+      .message .role {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .composer {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto auto;
+        gap: 8px;
+      }
+
+      .composer input {
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #ffffff;
+        padding: 0 12px;
+      }
+
+      .feedback {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-strong);
+        padding: 16px;
+      }
+
+      .feedback h3 {
+        margin: 0 0 12px;
+        font-size: 18px;
+      }
+
+      .feedback-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .feedback-block {
+        border-top: 1px solid var(--line);
+        padding-top: 12px;
+      }
+
+      .feedback-block strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .notice {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .ok {
+        color: var(--green);
+      }
+
+      .error {
+        color: var(--red);
+      }
+
+      @media (max-width: 820px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .composer,
+        .feedback-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <h1>Say Now AI Demo</h1>
+          <span>로컬 MVP Workflow 검증</span>
+        </div>
+
+        <button class="primary" type="button" onclick="startSession()">
+          세션 시작
+        </button>
+
+        <dl class="status">
+          <div class="status-row">
+            <dt>시나리오</dt>
+            <dd id="scenarioLabel">-</dd>
+          </div>
+          <div class="status-row">
+            <dt>세션</dt>
+            <dd id="sessionLabel">-</dd>
+          </div>
+          <div class="status-row">
+            <dt>남은 턴</dt>
+            <dd id="turnLabel">-</dd>
+          </div>
+          <div class="status-row">
+            <dt>결과</dt>
+            <dd id="resultLabel">대기</dd>
+          </div>
+        </dl>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <h2>카페에서 주문하기</h2>
+          <button type="button" onclick="loadFeedback()">피드백 조회</button>
+        </header>
+
+        <section id="conversation" class="conversation" aria-live="polite">
+          <p class="notice">세션을 시작하면 AI의 첫 질문이 표시됩니다.</p>
+        </section>
+
+        <section class="composer">
+          <input
+            id="textInput"
+            type="text"
+            placeholder="개발용 텍스트 입력: I want ice latte small size"
+            onkeydown="if (event.key === 'Enter') submitTextTurn()"
+          />
+          <button type="button" onclick="submitTextTurn()">텍스트 제출</button>
+          <button id="recordButton" type="button" onclick="startRecording()">
+            녹음 시작
+          </button>
+          <button id="stopButton" type="button" onclick="stopRecording()" disabled>
+            녹음 중지
+          </button>
+        </section>
+
+        <section class="feedback">
+          <h3>최종 피드백</h3>
+          <div id="feedbackBody" class="notice">아직 피드백이 없습니다.</div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      let sessionId = null;
+      let mediaRecorder = null;
+      let audioChunks = [];
+
+      async function startSession() {
+        const response = await fetch("/api/sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scenario_id: "cafe_order" }),
+        });
+        const body = await response.json();
+        if (!response.ok) {
+          appendMessage("system", body.detail || "세션 시작에 실패했습니다.");
+          return;
+        }
+
+        sessionId = body.session_id;
+        document.getElementById("scenarioLabel").textContent = body.scenario_id;
+        document.getElementById("sessionLabel").textContent = body.session_id.slice(0, 8);
+        document.getElementById("turnLabel").textContent = body.remaining_turns;
+        document.getElementById("resultLabel").textContent = "진행 중";
+        document.getElementById("conversation").innerHTML = "";
+        document.getElementById("feedbackBody").textContent = "아직 피드백이 없습니다.";
+        appendMessage("ai", body.assistant_message);
+      }
+
+      async function submitTextTurn() {
+        if (!ensureSession()) return;
+        const input = document.getElementById("textInput");
+        const transcript = input.value.trim();
+        if (!transcript) return;
+        input.value = "";
+        await submitTurn("/turns/text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transcript }),
+        });
+      }
+
+      async function startRecording() {
+        if (!ensureSession()) return;
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioChunks = [];
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) audioChunks.push(event.data);
+        };
+        mediaRecorder.onstop = async () => {
+          const blob = new Blob(audioChunks, { type: "audio/webm" });
+          stream.getTracks().forEach((track) => track.stop());
+          await submitAudioBlob(blob);
+        };
+        mediaRecorder.start();
+        document.getElementById("recordButton").disabled = true;
+        document.getElementById("stopButton").disabled = false;
+      }
+
+      async function stopRecording() {
+        if (!mediaRecorder) return;
+        mediaRecorder.stop();
+        document.getElementById("recordButton").disabled = false;
+        document.getElementById("stopButton").disabled = true;
+      }
+
+      async function submitAudioBlob(blob) {
+        if (!ensureSession()) return;
+        const formData = new FormData();
+        formData.append("audio", blob, "recording.webm");
+        await submitTurn("/turns/audio", {
+          method: "POST",
+          body: formData,
+        });
+      }
+
+      async function submitTurn(path, options) {
+        const response = await fetch(`/api/sessions/${sessionId}${path}`, options);
+        const body = await response.json();
+        if (!response.ok) {
+          appendMessage("system", body.detail || "턴 제출에 실패했습니다.");
+          return;
+        }
+
+        appendMessage("user", body.transcript);
+        appendMessage(
+          "ai",
+          `${body.assistant_message}\n\n이해도 ${body.understood_score}% · ${body.interpreted_as}`
+        );
+        document.getElementById("turnLabel").textContent = body.remaining_turns;
+        document.getElementById("resultLabel").textContent = body.scenario_result;
+        if (body.scenario_result !== "in_progress") {
+          await loadFeedback();
+        }
+      }
+
+      async function loadFeedback() {
+        if (!ensureSession()) return;
+        const response = await fetch(`/api/sessions/${sessionId}/feedback`);
+        const body = await response.json();
+        if (!response.ok) {
+          document.getElementById("feedbackBody").textContent =
+            body.detail || "피드백 조회에 실패했습니다.";
+          return;
+        }
+        renderFeedback(body);
+      }
+
+      function appendMessage(role, text) {
+        const conversation = document.getElementById("conversation");
+        const message = document.createElement("div");
+        message.className = `message ${role === "user" ? "user" : ""}`;
+        const label = document.createElement("span");
+        label.className = "role";
+        label.textContent = role === "user" ? "사용자" : role === "ai" ? "AI" : "시스템";
+        const content = document.createElement("div");
+        content.textContent = text;
+        message.append(label, content);
+        conversation.appendChild(message);
+        conversation.scrollTop = conversation.scrollHeight;
+      }
+
+      function renderFeedback(feedback) {
+        const body = document.getElementById("feedbackBody");
+        const turns = feedback.turn_feedback
+          .map(
+            (turn) => `
+              <div class="feedback-block">
+                <strong>${escapeHtml(turn.user_said)}</strong>
+                <div>이해도 ${turn.understood_score}%</div>
+                <div>${escapeHtml(turn.interpreted_as)}</div>
+                <div class="ok">${escapeHtml(turn.better_expression)}</div>
+                <div class="notice">${escapeHtml(turn.reason)}</div>
+              </div>
+            `
+          )
+          .join("");
+        body.className = "";
+        body.innerHTML = `
+          <div class="feedback-grid">
+            <div>
+              <strong>Total 이해도</strong>
+              <div>${feedback.total_understood_score}%</div>
+            </div>
+            <div>
+              <strong>시나리오 결과</strong>
+              <div>${feedback.scenario_result}</div>
+            </div>
+          </div>
+          <p>${escapeHtml(feedback.summary)}</p>
+          ${turns || '<p class="notice">기록된 발화가 없습니다.</p>'}
+        `;
+      }
+
+      function ensureSession() {
+        if (sessionId) return true;
+        appendMessage("system", "먼저 세션을 시작하세요.");
+        return false;
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+    </script>
+  </body>
+</html>
