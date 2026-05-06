@@ -41,6 +41,13 @@ def test_extract_slots_from_transcript_handles_short_cafe_answers():
     assert extract_slots_from_transcript("I'm to go") == {
         "for_here_or_to_go": "to go"
     }
+    assert extract_slots_from_transcript("Here.") == {
+        "for_here_or_to_go": "for here"
+    }
+    assert extract_slots_from_transcript("To go.") == {
+        "for_here_or_to_go": "to go"
+    }
+    assert extract_slots_from_transcript("Small size.") == {"size": "small"}
 
 
 def test_get_missing_slots_returns_required_slots_not_yet_filled():

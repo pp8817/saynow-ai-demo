@@ -23,7 +23,7 @@ def test_build_rule_based_feedback_summarizes_conversation_after_session_ends():
     feedback = build_rule_based_feedback(session)
 
     assert feedback["scenario_result"] == "success"
-    assert feedback["total_understood_score"] == 80
+    assert feedback["total_understood_score"] == 72
     assert feedback["turn_feedback"][0]["user_said"] == "I want ice latte small size"
     assert feedback["turn_feedback"][0]["understood_score"] == 60
     assert feedback["turn_feedback"][0]["score_delta"] == 12
@@ -61,7 +61,7 @@ def test_parse_session_feedback_returns_total_score_and_turn_feedback():
     feedback = parse_session_feedback(raw, session)
 
     assert feedback["scenario_result"] == "success"
-    assert feedback["total_understood_score"] == 76
+    assert feedback["total_understood_score"] == 82
     assert feedback["turn_feedback"][0]["heard_as"].startswith("외국인은")
     assert feedback["turn_feedback"][0]["understood_score"] == 70
     assert feedback["turn_feedback"][0]["score_delta"] == 8
@@ -294,3 +294,121 @@ def test_feedback_keeps_short_answers_as_small_plus_one_changes():
     assert feedback["turn_feedback"][1]["better_expression"] == "For here, please."
     assert feedback["turn_feedback"][0]["score_delta"] == 10
     assert feedback["turn_feedback"][1]["score_delta"] == 3
+
+
+def test_parse_session_feedback_uses_server_total_score_instead_of_llm_score():
+    session = SessionState(id="s1", scenario=get_scenario("cafe_order"))
+    session.result = "success"
+    session.turns.extend(
+        [
+            Turn(
+                id="turn-1",
+                transcript="I want to iced latte.",
+                filled_slots={"drink": "latte", "temperature": "iced"},
+                missing_slots=("size", "for_here_or_to_go"),
+                assistant_message="What size would you like?",
+            ),
+            Turn(
+                id="turn-2",
+                transcript="To go.",
+                filled_slots={},
+                missing_slots=("size", "for_here_or_to_go"),
+                assistant_message="What size would you like?",
+            ),
+            Turn(
+                id="turn-3",
+                transcript="Small size.",
+                filled_slots={"size": "small"},
+                missing_slots=("for_here_or_to_go",),
+                assistant_message="Is that for here or to go?",
+            ),
+            Turn(
+                id="turn-4",
+                transcript="Here.",
+                filled_slots={"for_here_or_to_go": "for here"},
+                missing_slots=(),
+                assistant_message="Scenario cleared.",
+            ),
+        ]
+    )
+    raw = """
+    {
+      "total_understood_score": 95,
+      "summary": "완벽하게 성공했습니다.",
+      "turn_feedback": []
+    }
+    """
+
+    feedback = parse_session_feedback(raw, session)
+
+    assert feedback["total_understood_score"] == 72
+
+
+def test_feedback_explains_when_answer_does_not_match_current_question():
+    session = SessionState(id="s1", scenario=get_scenario("cafe_order"))
+    session.result = "success"
+    session.turns.append(
+        Turn(
+            id="turn-1",
+            transcript="To go.",
+            filled_slots={},
+            missing_slots=("size", "for_here_or_to_go"),
+            assistant_message="What size would you like?",
+        )
+    )
+
+    feedback = build_rule_based_feedback(session)
+    turn_feedback = feedback["turn_feedback"][0]
+
+    assert turn_feedback["heard_as"] == (
+        "AI는 사이즈를 물었지만, 사용자는 다른 정보를 먼저 말한 것으로 보여요."
+    )
+    assert turn_feedback["better_expression"] == "Small, please."
+    assert turn_feedback["reason"] == (
+        "현재 질문에는 사이즈를 먼저 답해야 해서, 짧게 'Small, please.'라고 "
+        "말하는 편이 더 정확해요."
+    )
+
+
+def test_feedback_keeps_unclear_answer_as_generic_feedback():
+    session = SessionState(id="s1", scenario=get_scenario("cafe_order"))
+    session.result = "failure"
+    session.turns.append(
+        Turn(
+            id="turn-1",
+            transcript="um...",
+            filled_slots={},
+            missing_slots=("size", "for_here_or_to_go"),
+            assistant_message="What size would you like?",
+        )
+    )
+
+    feedback = build_rule_based_feedback(session)
+    turn_feedback = feedback["turn_feedback"][0]
+
+    assert turn_feedback["heard_as"] == (
+        "외국인은 사용자가 필요한 정보를 말하려는 중이라고 이해할 가능성이 높아요."
+    )
+    assert turn_feedback["better_expression"] == "Can I get a small iced latte to go?"
+
+
+def test_feedback_handles_punctuated_here_as_for_here():
+    session = SessionState(id="s1", scenario=get_scenario("cafe_order"))
+    session.result = "success"
+    session.turns.append(
+        Turn(
+            id="turn-1",
+            transcript="Here.",
+            filled_slots={"for_here_or_to_go": "for here"},
+            missing_slots=(),
+            assistant_message="Scenario cleared.",
+        )
+    )
+
+    feedback = build_rule_based_feedback(session)
+    turn_feedback = feedback["turn_feedback"][0]
+
+    assert turn_feedback["heard_as"] == (
+        "외국인은 매장 이용을 원한다는 뜻으로 이해할 가능성이 높아요."
+    )
+    assert turn_feedback["better_expression"] == "For here, please."

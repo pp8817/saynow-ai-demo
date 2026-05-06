@@ -133,3 +133,35 @@ def test_submit_transcript_does_not_fill_unasked_slot_when_follow_up_is_missed()
         "drink": "latte",
         "temperature": "iced",
     }
+
+
+def test_submit_transcript_prefers_transcript_slot_when_llm_conflicts():
+    service = SessionService(
+        evaluator=FakeEvaluator(
+            [
+                TurnEvaluation(
+                    filled_slots={"drink": "latte", "temperature": "iced"},
+                    follow_up_question="What size would you like?",
+                ),
+                TurnEvaluation(
+                    filled_slots={"size": "small"},
+                    follow_up_question="Is that for here or to go?",
+                ),
+                TurnEvaluation(
+                    filled_slots={"for_here_or_to_go": "to go"},
+                    follow_up_question="",
+                ),
+            ]
+        )
+    )
+    session = service.start_session("cafe_order")
+
+    service.submit_transcript(session.id, "I want iced latte")
+    service.submit_transcript(session.id, "Small size.")
+    final_turn = service.submit_transcript(session.id, "Here.")
+
+    assert final_turn.filled_slots == {"for_here_or_to_go": "for here"}
+    assert final_turn.assistant_message == "Scenario cleared."
+    assert service.get_session(session.id).filled_slots["for_here_or_to_go"] == (
+        "for here"
+    )

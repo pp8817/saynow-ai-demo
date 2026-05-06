@@ -1,8 +1,10 @@
+import re
+
 from saynow_ai_demo.domain.models import SessionState
 
 
 def extract_slots_from_transcript(transcript: str) -> dict[str, str]:
-    normalized = f" {transcript.lower().strip()} "
+    normalized = _normalize_transcript(transcript)
     slots: dict[str, str] = {}
 
     if _contains_any(normalized, (" latte ", " lattes ")):
@@ -56,3 +58,8 @@ def is_complete(session: SessionState) -> bool:
 
 def _contains_any(value: str, candidates: tuple[str, ...]) -> bool:
     return any(candidate in value for candidate in candidates)
+
+
+def _normalize_transcript(transcript: str) -> str:
+    words_only = re.sub(r"[^a-z0-9']+", " ", transcript.lower())
+    return f" {words_only.strip()} "

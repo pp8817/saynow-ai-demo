@@ -3,6 +3,7 @@ import re
 from typing import Any
 
 from saynow_ai_demo.domain.models import SessionState, Turn
+from saynow_ai_demo.domain.state_tracker import extract_slots_from_transcript
 
 
 def build_feedback_prompt(session: SessionState) -> str:
@@ -54,9 +55,7 @@ def parse_session_feedback(raw: str, session: SessionState) -> dict[str, Any]:
 
     feedback = {
         "scenario_result": session.result,
-        "total_understood_score": _clamp_score(
-            payload.get("total_understood_score", _fallback_total_score(session))
-        ),
+        "total_understood_score": _total_understood_score(session),
         "summary": _summary_for_session(session),
         "turn_feedback": _normalize_turn_feedback(payload, session),
     }
@@ -66,7 +65,7 @@ def parse_session_feedback(raw: str, session: SessionState) -> dict[str, Any]:
 def build_rule_based_feedback(session: SessionState) -> dict[str, Any]:
     return {
         "scenario_result": session.result,
-        "total_understood_score": _fallback_total_score(session),
+        "total_understood_score": _total_understood_score(session),
         "summary": _summary_for_session(session),
         "turn_feedback": [_feedback_for_turn(turn, session) for turn in session.turns],
     }
@@ -150,6 +149,12 @@ def _is_awkward_heard_as(text: str) -> bool:
 
 def _fallback_heard_as(turn: Turn) -> str:
     slots = turn.filled_slots
+    if not slots and _is_missed_follow_up_answer(turn):
+        expected_label = _korean_slot_label(turn.missing_slots[0])
+        return (
+            f"AI는 {expected_label}를 물었지만, 사용자는 다른 정보를 먼저 말한 "
+            "것으로 보여요."
+        )
     if not slots:
         return "외국인은 사용자가 필요한 정보를 말하려는 중이라고 이해할 가능성이 높아요."
     if "for_here_or_to_go" in slots:
@@ -211,14 +216,17 @@ def _korean_drink(value: str) -> str:
     return value
 
 
-def _fallback_total_score(session: SessionState) -> int:
+def _total_understood_score(session: SessionState) -> int:
     if not session.turns:
         return 0
+    average_turn_score = round(
+        sum(_turn_understood_score(turn) for turn in session.turns) / len(session.turns)
+    )
     if session.result == "success":
-        return 80
+        return min(95, average_turn_score + 12)
     if session.result == "failure":
-        return 55
-    return 0
+        return max(35, average_turn_score - 5)
+    return average_turn_score
 
 
 def _turn_understood_score(turn: Turn) -> int:
@@ -275,6 +283,9 @@ def _better_expression_for_turn(turn: Turn, session: SessionState) -> str:
     size = _english_size(slots.get("size", ""))
     temperature = _english_temperature(slots.get("temperature", ""))
 
+    if not slots and _is_missed_follow_up_answer(turn):
+        return _example_answer_for_slot(turn.missing_slots[0])
+
     if "for_here_or_to_go" in slots:
         destination = slots["for_here_or_to_go"].lower()
         if "to go" in destination or "take" in destination:
@@ -311,6 +322,13 @@ def _better_expression_for_turn(turn: Turn, session: SessionState) -> str:
 def _reason_for_turn(turn: Turn) -> str:
     text = turn.transcript.lower().strip()
     slots = turn.filled_slots
+    if not slots and _is_missed_follow_up_answer(turn):
+        expected_label = _korean_slot_label(turn.missing_slots[0])
+        expected_answer = _example_answer_for_slot(turn.missing_slots[0])
+        return (
+            f"현재 질문에는 {expected_label}를 먼저 답해야 해서, 짧게 "
+            f"'{expected_answer}'라고 말하는 편이 더 정확해요."
+        )
     if "ice latte" in text or "lce latte" in text:
         return (
             "지금 문장에서 크게 바꾸지 않고, 'ice latte'만 자연스러운 "
@@ -329,6 +347,36 @@ def _default_better_expression(session: SessionState) -> str:
     if session.scenario.id == "cafe_order":
         return "Can I get a small iced latte to go?"
     return "Could you help me with this?"
+
+
+def _is_missed_follow_up_answer(turn: Turn) -> bool:
+    if not turn.transcript.strip() or turn.filled_slots or not turn.missing_slots:
+        return False
+    expected_slot = turn.missing_slots[0]
+    if not _example_answer_for_slot(expected_slot):
+        return False
+    transcript_slots = extract_slots_from_transcript(turn.transcript)
+    return bool(transcript_slots and expected_slot not in transcript_slots)
+
+
+def _example_answer_for_slot(slot: str) -> str:
+    examples = {
+        "drink": "A latte, please.",
+        "size": "Small, please.",
+        "temperature": "Iced, please.",
+        "for_here_or_to_go": "For here, please.",
+    }
+    return examples.get(slot, "")
+
+
+def _korean_slot_label(slot: str) -> str:
+    labels = {
+        "drink": "음료",
+        "size": "사이즈",
+        "temperature": "온도",
+        "for_here_or_to_go": "매장/포장 여부",
+    }
+    return labels.get(slot, "필요한 정보")
 
 
 def _english_size(value: str) -> str:
@@ -377,11 +425,3 @@ def _load_first_json_object(raw: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError("JSON object must be a dictionary")
     return data
-
-
-def _clamp_score(value: object) -> int:
-    try:
-        score = int(value)
-    except (TypeError, ValueError):
-        return 0
-    return max(0, min(score, 100))

@@ -105,7 +105,7 @@ def test_feedback_api_returns_final_feedback_after_session_ends():
 
     assert response.status_code == 200
     body = response.json()
-    assert body["total_understood_score"] == 80
+    assert body["total_understood_score"] == 95
     assert body["turn_feedback"][0]["user_said"] == "I want ice latte small size"
     assert body["turn_feedback"][0]["heard_as"].startswith("외국인은")
     assert body["turn_feedback"][0]["understood_score"] == 95

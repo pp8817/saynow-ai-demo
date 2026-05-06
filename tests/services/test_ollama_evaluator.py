@@ -91,7 +91,7 @@ def test_ollama_evaluator_generates_final_session_feedback():
 
     feedback = evaluator.generate_feedback(session)
 
-    assert feedback["total_understood_score"] == 76
+    assert feedback["total_understood_score"] == 82
     assert feedback["turn_feedback"][0]["heard_as"].startswith("외국인은")
     assert feedback["turn_feedback"][0]["understood_score"] == 70
     assert feedback["turn_feedback"][0]["score_delta"] == 8
