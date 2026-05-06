@@ -307,13 +307,12 @@
       let audioChunks = [];
 
       async function startSession() {
-        const response = await fetch("/api/sessions", {
+        const { response, body } = await requestJson("/api/sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ scenario_id: "cafe_order" }),
         });
-        const body = await response.json();
-        if (!response.ok) {
+        if (!response || !response.ok) {
           appendMessage("system", body.detail || "세션 시작에 실패했습니다.");
           return;
         }
@@ -377,9 +376,11 @@
       }
 
       async function submitTurn(path, options) {
-        const response = await fetch(`/api/sessions/${sessionId}${path}`, options);
-        const body = await response.json();
-        if (!response.ok) {
+        const { response, body } = await requestJson(
+          `/api/sessions/${sessionId}${path}`,
+          options
+        );
+        if (!response || !response.ok) {
           appendMessage("system", body.detail || "턴 제출에 실패했습니다.");
           return;
         }
@@ -398,14 +399,36 @@
 
       async function loadFeedback() {
         if (!ensureSession()) return;
-        const response = await fetch(`/api/sessions/${sessionId}/feedback`);
-        const body = await response.json();
-        if (!response.ok) {
+        const { response, body } = await requestJson(
+          `/api/sessions/${sessionId}/feedback`
+        );
+        if (!response || !response.ok) {
           document.getElementById("feedbackBody").textContent =
             body.detail || "피드백 조회에 실패했습니다.";
           return;
         }
         renderFeedback(body);
+      }
+
+      async function requestJson(url, options) {
+        try {
+          const response = await fetch(url, options);
+          const text = await response.text();
+          let body = {};
+          if (text) {
+            try {
+              body = JSON.parse(text);
+            } catch {
+              body = { detail: text };
+            }
+          }
+          return { response, body };
+        } catch (error) {
+          return {
+            response: null,
+            body: { detail: `요청 중 오류가 발생했습니다: ${error.message}` },
+          };
+        }
       }
 
       function appendMessage(role, text) {

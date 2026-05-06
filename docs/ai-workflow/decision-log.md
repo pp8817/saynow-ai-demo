@@ -126,6 +126,38 @@ macOS 로컬 환경에서 `python` 명령이 없고 `python3`만 존재했다. �
 
 ---
 
+## 2026-05-06 - Ollama 미실행 시 local fallback evaluator 추가
+
+### 변경 전
+
+`/turns/text`와 `/turns/audio`는 모두 Ollama LLM 호출에 의존했다. 로컬에서 Ollama가 실행 중이지 않으면 `127.0.0.1:11434` 연결 실패가 500 에러로 전파됐고, 브라우저 화면에서는 별도 메시지가 표시되지 않아 사용자가 아무 반응이 없다고 느낄 수 있었다.
+
+### 변경 후
+
+Ollama 호출이 실패하면 local rule-based fallback evaluator가 동작한다. fallback은 transcript의 키워드를 기준으로 `drink`, `temperature`, `size`, `for_here_or_to_go` slot을 채우고, 가장 먼저 빠진 slot에 대한 꼬리 질문을 생성한다.
+
+### 변경 이유
+
+현재 목적은 AI 성능 검증이 아니라 Workflow 검증이다. Ollama 설치 여부 때문에 세션 진행, slot 업데이트, 꼬리 질문, 피드백 조회를 테스트하지 못하는 것은 데모 목적과 맞지 않다.
+
+### 성능 영향
+
+Ollama가 정상 실행 중이면 기존처럼 LLM 기반 평가를 사용한다. Ollama가 없을 때는 fallback이 동작하므로 피드백 품질과 의미 해석 범위는 낮아진다. 대신 텍스트 기반 Workflow는 끊기지 않는다.
+
+### 비용 영향
+
+변화 없음. fallback도 로컬 코드이므로 API 비용이 발생하지 않는다.
+
+### 리소스 영향
+
+Ollama 미실행 상태에서는 LLM 모델을 로드하지 않아 더 가볍게 동작한다.
+
+### 구현 복잡도 영향
+
+fallback 규칙 코드가 추가되어 약간 복잡해졌다. 대신 데모 실행 안정성이 높아지고, Ollama 설치 전에도 테스트가 가능해졌다.
+
+---
+
 ## 변경 기록 템플릿
 
 ```markdown

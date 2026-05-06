@@ -41,6 +41,8 @@ Ollama를 설치한 뒤 다음 모델을 받습니다.
 ollama pull qwen2.5:7b-instruct
 ```
 
+Ollama가 설치되어 있지 않거나 실행 중이 아니어도 개발용 텍스트 제출은 rule-based fallback으로 동작합니다. 이 fallback은 실제 LLM 품질을 검증하기 위한 것이 아니라, 세션/slot/꼬리 질문/피드백 Workflow가 이어지는지 확인하기 위한 안전장치입니다.
+
 로컬 환경에서 느리면 모델을 낮춰 실행합니다.
 
 ```bash
@@ -101,3 +103,4 @@ GET /api/sessions/{session_id}/feedback
 - 이해도는 STT transcript와 LLM 추론 기반의 소통 가능성 점수입니다.
 - 로컬 PC 성능에 따라 응답 시간이 달라질 수 있습니다.
 - `/turns/text`는 실제 음성 품질을 반영하지 않습니다.
+- Ollama 미실행 시 fallback은 간단한 키워드 기반 추론만 수행합니다.

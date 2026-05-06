@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from saynow_ai_demo.adapters.llm import OllamaEvaluator
 from saynow_ai_demo.api.app import create_app
 from saynow_ai_demo.services.evaluator import TurnEvaluation
 
@@ -22,6 +23,11 @@ class FakeSTTAdapter:
     def transcribe(self, audio_path):
         assert audio_path.exists()
         return "I want ice latte small size"
+
+
+class FailingLLMClient:
+    def complete(self, prompt: str) -> str:
+        raise ConnectionError("ollama is not running")
 
 
 def test_start_session_api_returns_opening_question():
@@ -99,3 +105,23 @@ def test_index_serves_demo_page():
     assert response.status_code == 200
     assert "Say Now AI Demo" in response.text
     assert "startSession" in response.text
+
+
+def test_text_turn_works_with_local_fallback_when_ollama_is_unavailable():
+    client = TestClient(
+        create_app(evaluator=OllamaEvaluator(llm_client=FailingLLMClient()))
+    )
+    session_id = client.post(
+        "/api/sessions", json={"scenario_id": "cafe_order"}
+    ).json()["session_id"]
+
+    response = client.post(
+        f"/api/sessions/{session_id}/turns/text",
+        json={"transcript": "I want ice latte small size"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["understood_score"] == 74
+    assert body["missing_slots"] == ["for_here_or_to_go"]
+    assert body["assistant_message"] == "Is that for here or to go?"
