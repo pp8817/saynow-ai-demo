@@ -67,3 +67,40 @@ def test_submit_transcript_marks_success_when_required_slots_are_complete():
     assert turn.assistant_message == "Scenario cleared."
     assert turn.missing_slots == ()
     assert service.get_session(session.id).result == "success"
+
+
+def test_submit_transcript_uses_transcript_slots_and_missing_slot_questions():
+    service = SessionService(
+        evaluator=FakeEvaluator(
+            [
+                TurnEvaluation(
+                    filled_slots={"drink": "latte"},
+                    follow_up_question="What size would you like?",
+                ),
+                TurnEvaluation(
+                    filled_slots={},
+                    follow_up_question="Would you like your latte iced or hot?",
+                ),
+                TurnEvaluation(
+                    filled_slots={},
+                    follow_up_question="Could you say that again?",
+                ),
+            ]
+        )
+    )
+    session = service.start_session("cafe_order")
+
+    first_turn = service.submit_transcript(session.id, "I want ice latte")
+    second_turn = service.submit_transcript(session.id, "I want small latte")
+    final_turn = service.submit_transcript(session.id, "here")
+
+    assert first_turn.filled_slots == {
+        "drink": "latte",
+        "temperature": "iced",
+    }
+    assert first_turn.missing_slots == ("size", "for_here_or_to_go")
+    assert second_turn.filled_slots == {"size": "small"}
+    assert second_turn.assistant_message == "Is that for here or to go?"
+    assert final_turn.filled_slots == {"for_here_or_to_go": "for here"}
+    assert final_turn.assistant_message == "Scenario cleared."
+    assert service.get_session(session.id).result == "success"

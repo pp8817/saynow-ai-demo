@@ -104,14 +104,8 @@ def _normalize_turn_feedback(
                     raw_item.get("heard_as"),
                     turn,
                 ),
-                "better_expression": str(
-                    raw_item.get("better_expression")
-                    or _default_better_expression(session)
-                ),
-                "reason": str(
-                    raw_item.get("reason")
-                    or "더 자연스럽고 완성된 문장으로 말하면 실제 상황에서 더 안정적으로 전달됩니다."
-                ),
+                "better_expression": _better_expression_for_turn(turn, session),
+                "reason": _reason_for_turn(turn),
             }
         )
     return normalized
@@ -224,10 +218,81 @@ def _summary_for_session(session: SessionState) -> str:
     return "세션이 끝나면 전체 대화를 기준으로 최종 피드백을 확인할 수 있어요."
 
 
+def _better_expression_for_turn(turn: Turn, session: SessionState) -> str:
+    slots = turn.filled_slots
+    drink = _english_drink(slots.get("drink") or _drink_from_transcript(turn.transcript))
+    size = _english_size(slots.get("size", ""))
+    temperature = _english_temperature(slots.get("temperature", ""))
+
+    if "for_here_or_to_go" in slots:
+        destination = slots["for_here_or_to_go"].lower()
+        if "to go" in destination or "take" in destination:
+            return "To go, please."
+        if "here" in destination:
+            return "For here, please."
+
+    if drink and size and temperature:
+        return f"Can I get a {size} {temperature} {drink}, please?"
+    if drink and size:
+        return f"Can I get a {size} {drink}, please?"
+    if drink and temperature:
+        article = "an" if temperature == "iced" else "a"
+        return f"Can I get {article} {temperature} {drink}, please?"
+    if size:
+        return f"A {size} one, please."
+    if temperature:
+        return f"{temperature.capitalize()}, please."
+    if drink:
+        return f"Can I get a {drink}, please?"
+
+    return _default_better_expression(session)
+
+
+def _reason_for_turn(turn: Turn) -> str:
+    if turn.filled_slots:
+        return "주문할 때는 완성된 문장으로 말하면 더 자연스럽게 들려요."
+    return "더 자연스럽고 완성된 문장으로 말하면 실제 상황에서 더 안정적으로 전달됩니다."
+
+
 def _default_better_expression(session: SessionState) -> str:
     if session.scenario.id == "cafe_order":
         return "Can I get a small iced latte to go?"
     return "Could you help me with this?"
+
+
+def _english_size(value: str) -> str:
+    lower = value.lower()
+    if "small" in lower:
+        return "small"
+    if "medium" in lower:
+        return "medium"
+    if "large" in lower:
+        return "large"
+    return ""
+
+
+def _english_temperature(value: str) -> str:
+    lower = value.lower()
+    if "ice" in lower or "iced" in lower or "cold" in lower:
+        return "iced"
+    if "hot" in lower or "warm" in lower:
+        return "hot"
+    return ""
+
+
+def _english_drink(value: str) -> str:
+    lower = value.lower()
+    if "latte" in lower:
+        return "latte"
+    if "americano" in lower:
+        return "americano"
+    if "coffee" in lower:
+        return "coffee"
+    return ""
+
+
+def _drink_from_transcript(transcript: str) -> str:
+    return _english_drink(transcript)
 
 
 def _load_first_json_object(raw: str) -> dict[str, Any]:

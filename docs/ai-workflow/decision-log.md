@@ -393,6 +393,102 @@ LLM 호출 횟수는 기존 수동 조회와 동일하다. 다만 이제 종료 
 
 ---
 
+## 2026-05-06 - slot 추적과 꼬리 질문을 deterministic guardrail로 보강
+
+### 변경 전
+
+대화 중 slot 추적과 꼬리 질문은 LLM 응답을 우선 사용했다. 따라서 이미 `I want ice latte`에서 온도를 말했더라도, 이후 LLM이 다시 다음처럼 온도를 물을 수 있었다.
+
+```text
+Would you like your latte ice or hot?
+```
+
+또한 `here`처럼 짧은 답변은 LLM이 `for_here_or_to_go` slot으로 안정적으로 추출하지 못하면, 실제로는 답변을 했는데도 턴 제한에 걸려 실패할 수 있었다.
+
+### 변경 후
+
+대화 중에는 다음 guardrail을 추가했다.
+
+```text
+1. transcript에서 명확한 cafe slot을 rule-based로 한 번 더 추출
+2. 기존에 채워진 slot은 덮어쓰지 않음
+3. 꼬리 질문은 LLM 질문을 그대로 쓰지 않고 실제 missing slot 기준 template 사용
+```
+
+예를 들어 다음 입력은 LLM이 흔들려도 서버가 slot을 채운다.
+
+```text
+I want ice latte → drink=latte, temperature=iced
+small please → size=small
+here → for_here_or_to_go=for here
+I'm to go → for_here_or_to_go=to go
+```
+
+### 변경 이유
+
+MVP의 핵심은 자유 대화를 잘하는 것이 아니라 시나리오를 안정적으로 클리어하는 것이다. 필수 slot이 이미 채워졌는지와 다음에 무엇을 물어야 하는지는 LLM 자유문장보다 서버 상태를 기준으로 판단해야 한다.
+
+### 성능 영향
+
+대화 중 LLM 호출 횟수는 변하지 않는다. 다만 꼬리 질문 생성은 서버 template을 사용하므로 LLM이 만든 부정확한 질문을 그대로 노출하는 위험이 줄어든다.
+
+### 비용 영향
+
+로컬 Ollama 실행이므로 비용 변화는 없다. 외부 API로 전환해도 호출 횟수는 동일하다.
+
+### 리소스 영향
+
+rule-based slot 추출은 문자열 검사 수준이라 리소스 영향은 사실상 없다.
+
+### 구현 복잡도 영향
+
+`extract_slots_from_transcript`와 기존 slot 보존 로직이 추가됐다. 대신 LLM 출력이 흔들려도 시나리오 진행 상태와 성공/실패 판정이 더 안정적이다.
+
+---
+
+## 2026-05-06 - 더 나은 표현 피드백을 slot 기반으로 안정화
+
+### 변경 전
+
+최종 피드백에서 LLM이 각 답변의 `better_expression`과 `reason`을 생성했다. 이때 모델이 사용자 답변을 고쳐주는 대신 AI가 했어야 할 질문을 제안하는 문제가 생길 수 있었다.
+
+```text
+내 답변: I want small latte
+더 나은 표현: Do you want it to go or here?
+```
+
+### 변경 후
+
+`better_expression`과 `reason`도 turn에서 새로 채워진 slot을 기준으로 서버가 생성한다.
+
+```text
+I want small latte → Can I get a small latte, please?
+here → For here, please.
+I'm to go → To go, please.
+```
+
+### 변경 이유
+
+사용자가 원하는 피드백은 “내 답변을 어떻게 더 자연스럽게 말할 수 있는가”다. LLM이 전체 대화 문맥을 보고 다음 질문이나 다른 slot을 섞어 제안하면 피드백 신뢰도가 떨어진다.
+
+### 성능 영향
+
+최종 피드백에서 LLM이 생성해야 하는 항목이 줄어든다. 로컬 Ollama 응답 시간이 더 짧아질 수 있고, 출력 JSON이 흔들릴 가능성도 줄어든다.
+
+### 비용 영향
+
+로컬 실행에서는 비용 변화가 없다. 외부 API로 전환하면 출력 토큰이 줄어 비용이 소폭 줄 수 있다.
+
+### 리소스 영향
+
+서버 문자열 조합 수준이므로 리소스 영향은 거의 없다.
+
+### 구현 복잡도 영향
+
+slot 기반 영어 표현 매핑이 추가됐다. 대신 최종 피드백 품질이 LLM 출력에 덜 의존하게 됐다.
+
+---
+
 ## 변경 기록 템플릿
 
 ```markdown

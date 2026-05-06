@@ -181,3 +181,39 @@ def test_parse_session_feedback_uses_natural_rule_based_summary():
     assert feedback["summary"] == (
         "대화 전체를 보면 필요한 정보가 전달되어 시나리오를 완료했어요."
     )
+
+
+def test_parse_session_feedback_prefers_slot_based_better_expression():
+    session = SessionState(id="s1", scenario=get_scenario("cafe_order"))
+    session.result = "success"
+    session.turns.append(
+        Turn(
+            id="turn-1",
+            transcript="I want small latte",
+            filled_slots={"size": "small"},
+            missing_slots=("for_here_or_to_go",),
+            assistant_message="Is that for here or to go?",
+        )
+    )
+    raw = """
+    {
+      "total_understood_score": 95,
+      "summary": "대화가 완료되었습니다.",
+      "turn_feedback": [
+        {
+          "user_said": "I want small latte",
+          "ai_question": "Is that for here or to go?",
+          "better_expression": "Do you want it to go or here?",
+          "reason": "이 질문은 고객에게 더 명확합니다."
+        }
+      ]
+    }
+    """
+
+    feedback = parse_session_feedback(raw, session)
+    turn_feedback = feedback["turn_feedback"][0]
+
+    assert turn_feedback["better_expression"] == "Can I get a small latte, please?"
+    assert turn_feedback["reason"] == (
+        "주문할 때는 완성된 문장으로 말하면 더 자연스럽게 들려요."
+    )

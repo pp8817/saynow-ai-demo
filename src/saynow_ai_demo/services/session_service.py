@@ -4,6 +4,7 @@ from uuid import uuid4
 from saynow_ai_demo.domain.models import Scenario, SessionState, Turn
 from saynow_ai_demo.domain.scenarios import get_scenario
 from saynow_ai_demo.domain.state_tracker import (
+    extract_slots_from_transcript,
     get_missing_slots,
     is_complete,
     merge_filled_slots,
@@ -49,7 +50,17 @@ class SessionService:
             current_slots=dict(session.filled_slots),
             transcript=transcript,
         )
-        merge_filled_slots(session, evaluation.filled_slots)
+        transcript_slots = extract_slots_from_transcript(transcript)
+        turn_slots = {
+            **evaluation.filled_slots,
+            **transcript_slots,
+        }
+        newly_filled_slots = {
+            slot: value
+            for slot, value in turn_slots.items()
+            if slot not in session.filled_slots
+        }
+        merge_filled_slots(session, turn_slots)
         missing_slots = get_missing_slots(session)
 
         if is_complete(session):
@@ -59,14 +70,12 @@ class SessionService:
             session.result = "failure"
             assistant_message = "The scenario was not cleared in time."
         else:
-            assistant_message = evaluation.follow_up_question or _fallback_question(
-                missing_slots
-            )
+            assistant_message = _fallback_question(missing_slots)
 
         turn = Turn(
             id=f"turn-{len(session.turns) + 1}",
             transcript=transcript,
-            filled_slots=dict(evaluation.filled_slots),
+            filled_slots=dict(newly_filled_slots),
             missing_slots=missing_slots,
             assistant_message=assistant_message,
         )
