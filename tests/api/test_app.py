@@ -92,12 +92,7 @@ def test_submit_text_turn_api_returns_follow_up():
 
 
 def test_feedback_api_returns_final_feedback_after_session_ends():
-    client = TestClient(
-        create_app(
-            evaluator=CompleteFakeEvaluator(),
-            feedback_generator=FakeFeedbackGenerator(),
-        )
-    )
+    client = TestClient(create_app(evaluator=CompleteFakeEvaluator()))
     session_id = client.post(
         "/api/sessions", json={"scenario_id": "cafe_order"}
     ).json()["session_id"]
@@ -110,10 +105,12 @@ def test_feedback_api_returns_final_feedback_after_session_ends():
 
     assert response.status_code == 200
     body = response.json()
-    assert body["total_understood_score"] == 84
+    assert body["total_understood_score"] == 80
     assert body["turn_feedback"][0]["user_said"] == "I want ice latte small size"
     assert body["turn_feedback"][0]["heard_as"].startswith("외국인은")
-    assert "understood_score" not in body["turn_feedback"][0]
+    assert body["turn_feedback"][0]["understood_score"] == 95
+    assert body["turn_feedback"][0]["score_delta"] == 12
+    assert body["turn_feedback"][0]["improved_understood_score"] == 98
 
 
 def test_feedback_api_rejects_in_progress_session():
