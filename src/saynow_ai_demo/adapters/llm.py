@@ -3,12 +3,13 @@ from typing import Protocol
 import httpx
 
 from saynow_ai_demo.config import settings
-from saynow_ai_demo.domain.models import Scenario
+from saynow_ai_demo.domain.models import Scenario, SessionState
 from saynow_ai_demo.services.evaluator import (
     TurnEvaluation,
     build_turn_prompt,
     parse_turn_evaluation,
 )
+from saynow_ai_demo.services.feedback import build_feedback_prompt, parse_session_feedback
 
 
 class LocalLLMUnavailableError(RuntimeError):
@@ -68,3 +69,14 @@ class OllamaEvaluator:
                 "`ollama serve` 실행 후 다시 시도하세요."
             ) from exc
         return parse_turn_evaluation(raw_response)
+
+    def generate_feedback(self, session: SessionState) -> dict:
+        prompt = build_feedback_prompt(session)
+        try:
+            raw_response = self.llm_client.complete(prompt)
+        except Exception as exc:
+            raise LocalLLMUnavailableError(
+                "Ollama가 실행 중이 아니어서 AI 피드백을 생성할 수 없습니다. "
+                "`ollama serve` 실행 후 다시 시도하세요."
+            ) from exc
+        return parse_session_feedback(raw_response, session)

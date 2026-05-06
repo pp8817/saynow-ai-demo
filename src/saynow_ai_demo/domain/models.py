@@ -19,8 +19,6 @@ class Scenario:
 class Turn:
     id: str
     transcript: str
-    understood_score: int
-    interpreted_as: str
     filled_slots: dict[str, str]
     missing_slots: tuple[str, ...]
     assistant_message: str

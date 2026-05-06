@@ -10,10 +10,10 @@
 사용자 음성
 → STT
 → transcript
-→ LLM 기반 이해도 평가
+→ LLM 기반 slot 추적
 → 시나리오 상태 업데이트
 → 꼬리 질문 또는 성공/실패 판정
-→ 세션 피드백
+→ 세션 종료 후 최종 이해도와 대화별 피드백
 ```
 
 추후 블로그 작성에 활용할 수 있도록 모델 선택 이유, 제외한 기술, 비용/성능/리소스 판단 기준도 함께 기록한다.
@@ -61,11 +61,11 @@ MVP에서는 발음 정밀 채점보다 **상황을 클리어했는지**와 **�
 | 시나리오 선택 | 데모에서는 `카페에서 주문하기` 1개 시나리오부터 시작 |
 | 음성 입력 | 브라우저에서 녹음한 오디오를 Backend로 전송 |
 | STT | 로컬 Whisper 계열 모델로 음성을 텍스트로 변환 |
-| 턴 평가 | LLM이 사용자 발화의 의미, 이해도, 채워진 slot을 평가 |
+| 턴 평가 | LLM이 사용자 발화에서 새로 채워진 slot과 다음 꼬리 질문을 추출 |
 | 시나리오 상태 추적 | required slot / filled slot / missing slot 관리 |
 | 꼬리 질문 생성 | 부족한 slot을 채우기 위한 질문 생성 |
 | 성공/실패 판정 | 제한된 턴 안에 시나리오가 클리어됐는지 판단 |
-| 세션 피드백 | Total 이해도, 발화별 피드백, 더 나은 표현 제공 |
+| 세션 피드백 | 세션 종료 후 Total 이해도와 대화별 피드백, 더 나은 표현 제공 |
 | 구현 기록 | 스펙 변경, 성능/비용/리소스 판단을 문서에 기록 |
 
 ### 3.2 제외
@@ -89,7 +89,7 @@ flowchart TD
     A["시나리오 선택"] --> B["AI 첫 질문"]
     B --> C["사용자 음성 답변"]
     C --> D["STT<br/>음성 → 텍스트"]
-    D --> E["LLM 턴 평가<br/>의미 / 이해도 / slot 추출"]
+    D --> E["LLM 턴 평가<br/>slot 추출 / 꼬리 질문 생성"]
     E --> F["ScenarioStateTracker<br/>filled slot / missing slot 업데이트"]
     F --> G{"시나리오 클리어?"}
     G -- "아니오" --> H{"꼬리 질문 횟수 남음?"}
@@ -99,7 +99,7 @@ flowchart TD
     G -- "예" --> K["성공 판정"]
     J --> L["세션 전체 피드백 생성"]
     K --> L
-    L --> M["Total 이해도<br/>발화별 피드백<br/>더 나은 표현"]
+    L --> M["Total 이해도<br/>대화별 피드백<br/>더 나은 표현"]
 ```
 
 ---
@@ -110,7 +110,7 @@ flowchart TD
 | --- | --- | --- |
 | STTAdapter | 사용자 음성을 transcript로 변환 | `faster-whisper` wrapper |
 | LLMClient | 로컬 LLM 호출 | Ollama HTTP API wrapper |
-| TurnUnderstandingEvaluator | 발화 의미, 이해도, slot 추출 | LLM structured JSON 출력 |
+| TurnUnderstandingEvaluator | 새로 채워진 slot 추출, 꼬리 질문 생성 | LLM structured JSON 출력 |
 | ScenarioStateTracker | 시나리오 진행 상태 관리 | Python rule-based state merge |
 | FollowUpQuestionGenerator | 부족한 정보를 묻는 꼬리 질문 생성 | LLM JSON 응답 우선, 실패 시 missing slot별 고정 template |
 | ScenarioCompletionJudge | 성공/실패 판정 | required slot 충족 여부 + LLM reason |
@@ -118,7 +118,7 @@ flowchart TD
 
 MVP에서는 모든 판단을 LLM에게 통째로 맡기지 않는다.
 
-LLM은 의미 해석과 설명 생성에 사용하고, 시나리오 상태의 최종 truth는 `ScenarioStateTracker`가 관리한다. 이렇게 해야 LLM 응답이 흔들려도 required slot 기준의 성공/실패 판정이 유지된다.
+LLM은 대화 중에는 slot 추적과 꼬리 질문 생성에 사용하고, 세션 종료 후에만 이해도와 피드백 설명 생성에 사용한다. 시나리오 상태의 최종 truth는 `ScenarioStateTracker`가 관리한다. 이렇게 해야 LLM 응답이 흔들려도 required slot 기준의 성공/실패 판정이 유지된다.
 
 ---
 
@@ -181,7 +181,7 @@ MVP의 이해도 점수는 발음 점수가 아니다.
 | STT 신뢰도 | 10% | transcript가 안정적으로 추출됐는지 |
 | 발화 흐름 | 10% | 침묵, 반복, 지나치게 짧은 답변 여부 |
 
-데모에서는 STT 신뢰도와 발화 흐름 데이터가 제한적일 수 있으므로, 초기 버전은 LLM 기반 평가와 slot 충족도를 중심으로 점수를 계산한다. STT 엔진에서 confidence를 안정적으로 제공하지 않으면 해당 항목은 낮은 가중치로 유지하거나 계산에서 제외한다.
+데모에서는 각 턴마다 이해도 점수를 계산하거나 표시하지 않는다. 대화 중에는 사용자가 답변 흐름에 집중할 수 있도록 slot 추적과 꼬리 질문만 수행하고, 세션이 성공 또는 실패로 종료된 뒤 전체 대화 transcript를 기준으로 최종 이해도 1개를 계산한다.
 
 ---
 
@@ -231,11 +231,14 @@ multipart/form-data
 {
   "turn_id": "turn-1",
   "transcript": "I want ice latte small size",
-  "understood_score": 78,
-  "interpreted_as": "The user wants a small iced latte.",
-  "filled_slots": ["drink", "temperature", "size"],
+  "filled_slots": {
+    "drink": "iced latte",
+    "temperature": "iced",
+    "size": "small"
+  },
   "missing_slots": ["for_here_or_to_go"],
   "is_scenario_complete": false,
+  "scenario_result": "in_progress",
   "assistant_message": "Sure. Is that for here or to go?",
   "remaining_turns": 3
 }
@@ -257,8 +260,8 @@ GET /api/sessions/{session_id}/feedback
   "turn_feedback": [
     {
       "user_said": "I want ice latte small size",
-      "understood_score": 78,
-      "interpreted_as": "작은 아이스 라떼를 원한다는 뜻으로 이해될 가능성이 높습니다.",
+      "ai_question": "Sure. Is that for here or to go?",
+      "heard_as": "외국인에게는 작은 아이스 라떼를 주문하려는 뜻으로 들려요.",
       "better_expression": "Can I get a small iced latte?",
       "reason": "카페 주문에서는 'I want'보다 'Can I get'이 더 자연스럽게 들립니다."
     }
@@ -416,11 +419,11 @@ MVP 데모는 다음 조건을 만족하면 완료로 본다.
 - 브라우저에서 카페 주문 시나리오를 시작할 수 있다.
 - 사용자가 음성을 녹음해 제출할 수 있다.
 - Backend가 음성을 transcript로 변환한다.
-- LLM이 발화 의미, 이해도, slot 정보를 JSON으로 반환한다.
+- 대화 중 LLM이 새로 채워진 slot과 꼬리 질문을 JSON으로 반환한다.
 - 부족한 정보가 있으면 AI가 꼬리 질문을 반환한다.
 - required slot이 채워지면 성공 판정을 반환한다.
 - 턴 제한이 끝나면 실패 판정을 반환한다.
-- 세션 종료 후 Total 이해도와 발화별 피드백을 볼 수 있다.
+- 세션 종료 후 Total 이해도와 대화별 피드백을 볼 수 있다.
 - 구현 중 변경한 모델/스펙 판단이 문서에 기록되어 있다.
 
 ---

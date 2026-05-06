@@ -4,7 +4,7 @@ Say Now의 MVP AI Workflow를 로컬에서 검증하는 데모입니다.
 
 ## 목표
 
-사용자 음성 입력부터 STT, LLM 기반 이해도 평가, 시나리오 상태 추적, 꼬리 질문, 성공/실패 판정, 최종 피드백까지 한 번에 실행되는지 확인합니다.
+사용자 음성 입력부터 STT, LLM 기반 slot 추적, 꼬리 질문, 성공/실패 판정, 최종 이해도와 대화별 피드백까지 한 번에 실행되는지 확인합니다.
 
 ## 기본 구성
 
@@ -30,7 +30,7 @@ uvicorn saynow_ai_demo.main:app --reload
 | 변수 | 기본값 | 설명 |
 | --- | --- | --- |
 | `SAYNOW_OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama API 주소 |
-| `SAYNOW_OLLAMA_MODEL` | `qwen2.5:7b-instruct` | 턴 평가에 사용할 로컬 LLM |
+| `SAYNOW_OLLAMA_MODEL` | `qwen2.5:7b-instruct` | 턴 추적과 최종 피드백에 사용할 로컬 LLM |
 | `SAYNOW_WHISPER_MODEL` | `small.en` | faster-whisper STT 모델 |
 
 ## 로컬 모델 준비
@@ -91,6 +91,8 @@ POST /api/sessions/{session_id}/turns/text
 GET /api/sessions/{session_id}/feedback
 ```
 
+세션이 `success` 또는 `failure`로 종료된 뒤에만 최종 피드백을 생성합니다.
+
 ## 테스트
 
 ```bash
@@ -100,7 +102,7 @@ GET /api/sessions/{session_id}/feedback
 ## MVP 한계
 
 - 발음/억양 정밀 분석은 하지 않습니다.
-- 이해도는 STT transcript와 LLM 추론 기반의 소통 가능성 점수입니다.
+- 이해도는 각 턴마다 표시하지 않고, 세션 종료 후 전체 대화를 기준으로 한 번만 계산합니다.
 - 로컬 PC 성능에 따라 응답 시간이 달라질 수 있습니다.
 - `/turns/text`는 실제 음성 품질을 반영하지 않습니다.
-- Ollama가 실행 중이지 않으면 AI 평가 대신 경고 문구를 표시합니다.
+- Ollama가 실행 중이지 않으면 AI 평가/피드백 대신 경고 문구를 표시합니다.

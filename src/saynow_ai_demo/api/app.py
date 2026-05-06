@@ -1,5 +1,6 @@
 import tempfile
 from pathlib import Path
+from typing import Protocol
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -12,19 +13,36 @@ from saynow_ai_demo.api.schemas import (
     TextTurnRequest,
     TurnResponse,
 )
+from saynow_ai_demo.domain.models import SessionState
 from saynow_ai_demo.domain.state_tracker import is_complete
-from saynow_ai_demo.services.feedback import build_fallback_feedback
+from saynow_ai_demo.services.feedback import build_rule_based_feedback
 from saynow_ai_demo.services.session_service import Evaluator, SessionService
+
+
+class FeedbackGenerator(Protocol):
+    def generate_feedback(self, session: SessionState) -> dict:
+        ...
+
+
+class RuleBasedFeedbackGenerator:
+    def generate_feedback(self, session: SessionState) -> dict:
+        return build_rule_based_feedback(session)
 
 
 def create_app(
     evaluator: Evaluator | None = None,
+    feedback_generator: FeedbackGenerator | None = None,
     stt_adapter: STTAdapter | None = None,
 ) -> FastAPI:
     if evaluator is None:
         from saynow_ai_demo.adapters.llm import OllamaEvaluator
 
-        evaluator = OllamaEvaluator()
+        ollama_evaluator = OllamaEvaluator()
+        evaluator = ollama_evaluator
+        if feedback_generator is None:
+            feedback_generator = ollama_evaluator
+    if feedback_generator is None:
+        feedback_generator = RuleBasedFeedbackGenerator()
     if stt_adapter is None:
         from saynow_ai_demo.adapters.stt import FasterWhisperSTTAdapter
 
@@ -68,9 +86,15 @@ def create_app(
     def get_feedback(session_id: str):
         try:
             session = service.get_session(session_id)
+            if session.result == "in_progress":
+                raise ValueError("세션 종료 후 최종 피드백을 확인할 수 있습니다.")
+            return feedback_generator.generate_feedback(session)
+        except LocalLLMUnavailableError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        return build_fallback_feedback(session)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return app
 
@@ -90,8 +114,6 @@ def _submit_transcript_response(
     return TurnResponse(
         turn_id=turn.id,
         transcript=turn.transcript,
-        understood_score=turn.understood_score,
-        interpreted_as=turn.interpreted_as,
         filled_slots=turn.filled_slots,
         missing_slots=list(turn.missing_slots),
         is_scenario_complete=is_complete(session),

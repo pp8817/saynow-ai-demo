@@ -25,8 +25,6 @@ def test_submit_transcript_updates_slots_and_asks_follow_up():
         evaluator=FakeEvaluator(
             [
                 TurnEvaluation(
-                    understood_score=82,
-                    interpreted_as="The user wants a small iced latte.",
                     filled_slots={
                         "drink": "iced latte",
                         "temperature": "iced",
@@ -51,8 +49,6 @@ def test_submit_transcript_marks_success_when_required_slots_are_complete():
         evaluator=FakeEvaluator(
             [
                 TurnEvaluation(
-                    understood_score=88,
-                    interpreted_as="The user completed the order.",
                     filled_slots={
                         "drink": "iced latte",
                         "temperature": "iced",

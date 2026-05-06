@@ -19,8 +19,6 @@ class SessionResponse(BaseModel):
 class TurnResponse(BaseModel):
     turn_id: str
     transcript: str
-    understood_score: int
-    interpreted_as: str
     filled_slots: dict[str, str]
     missing_slots: list[str]
     is_scenario_complete: bool

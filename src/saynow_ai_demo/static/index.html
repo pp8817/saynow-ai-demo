@@ -458,7 +458,6 @@
         return [
           body.assistant_message,
           "",
-          `이해도 ${body.understood_score}% · ${body.interpreted_as}`,
           `상황 진행 ${progress}`,
           `부족한 정보: ${missingText}`,
         ].join("\n");
@@ -481,9 +480,9 @@
           .map(
             (turn) => `
               <div class="feedback-block">
-                <strong>${escapeHtml(turn.user_said)}</strong>
-                <div>이해도 ${turn.understood_score}%</div>
-                <div>${escapeHtml(turn.interpreted_as)}</div>
+                <strong>내 답변: ${escapeHtml(turn.user_said)}</strong>
+                <div class="notice">AI 응답: ${escapeHtml(turn.ai_question)}</div>
+                <div>${escapeHtml(turn.heard_as)}</div>
                 <div class="ok">${escapeHtml(turn.better_expression)}</div>
                 <div class="notice">${escapeHtml(turn.reason)}</div>
               </div>
@@ -502,6 +501,7 @@
               <div>${feedback.scenario_result}</div>
             </div>
           </div>
+          <h4>대화별 피드백</h4>
           <p>${escapeHtml(feedback.summary)}</p>
           ${turns || '<p class="notice">기록된 발화가 없습니다.</p>'}
         `;

@@ -66,8 +66,6 @@ class SessionService:
         turn = Turn(
             id=f"turn-{len(session.turns) + 1}",
             transcript=transcript,
-            understood_score=evaluation.understood_score,
-            interpreted_as=evaluation.interpreted_as,
             filled_slots=dict(evaluation.filled_slots),
             missing_slots=missing_slots,
             assistant_message=assistant_message,

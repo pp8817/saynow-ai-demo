@@ -1,5 +1,6 @@
 import pytest
 
+from saynow_ai_demo.domain.models import SessionState, Turn
 from saynow_ai_demo.adapters.llm import LocalLLMUnavailableError, OllamaEvaluator
 from saynow_ai_demo.domain.scenarios import get_scenario
 
@@ -9,8 +10,6 @@ class FakeLLMClient:
         assert "카페에서 주문하기" in prompt
         return """
         {
-          "understood_score": 90,
-          "interpreted_as": "The user wants coffee to go.",
           "filled_slots": {
             "drink": "coffee",
             "for_here_or_to_go": "to go"
@@ -25,6 +24,27 @@ class FailingLLMClient:
         raise ConnectionError("ollama is not running")
 
 
+class FakeFeedbackLLMClient:
+    def complete(self, prompt: str) -> str:
+        assert "Evaluate the whole conversation only after the session has ended" in prompt
+        assert "I want latte" in prompt
+        return """
+        {
+          "total_understood_score": 76,
+          "summary": "주문 의도는 전달됐지만 정보가 부족했습니다.",
+          "turn_feedback": [
+            {
+              "user_said": "I want latte",
+              "ai_question": "Would you like it hot or cold?",
+              "heard_as": "외국인에게는 라떼를 원한다는 뜻으로 들려요.",
+              "better_expression": "Can I get a latte?",
+              "reason": "주문 상황에서는 Can I get이 더 자연스럽습니다."
+            }
+          ]
+        }
+        """
+
+
 def test_ollama_evaluator_uses_llm_client_and_parses_result():
     evaluator = OllamaEvaluator(llm_client=FakeLLMClient())
 
@@ -34,7 +54,6 @@ def test_ollama_evaluator_uses_llm_client_and_parses_result():
         transcript="coffee to go",
     )
 
-    assert result.understood_score == 90
     assert result.filled_slots == {
         "drink": "coffee",
         "for_here_or_to_go": "to go",
@@ -55,3 +74,24 @@ def test_ollama_evaluator_raises_warning_error_when_local_llm_is_unavailable():
     assert "Ollama가 실행 중이 아니어서 AI 평가를 진행할 수 없습니다." in str(
         exc_info.value
     )
+
+
+def test_ollama_evaluator_generates_final_session_feedback():
+    scenario = get_scenario("cafe_order")
+    session = SessionState(id="s1", scenario=scenario, result="success")
+    session.turns.append(
+        Turn(
+            id="turn-1",
+            transcript="I want latte",
+            filled_slots={"drink": "latte"},
+            missing_slots=("size", "temperature"),
+            assistant_message="Would you like it hot or cold?",
+        )
+    )
+    evaluator = OllamaEvaluator(llm_client=FakeFeedbackLLMClient())
+
+    feedback = evaluator.generate_feedback(session)
+
+    assert feedback["total_understood_score"] == 76
+    assert feedback["turn_feedback"][0]["heard_as"].startswith("외국인에게는")
+    assert "understood_score" not in feedback["turn_feedback"][0]
