@@ -215,6 +215,29 @@
         font-size: 14px;
       }
 
+      .feedback-loading {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .spinner {
+        width: 14px;
+        height: 14px;
+        border: 2px solid #f3d8c3;
+        border-top-color: var(--orange);
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
       .ok {
         color: var(--green);
       }
@@ -275,7 +298,9 @@
       <main class="main">
         <header class="topbar">
           <h2>카페에서 주문하기</h2>
-          <button type="button" onclick="loadFeedback()">피드백 조회</button>
+          <button id="feedbackButton" type="button" onclick="loadFeedback()">
+            피드백 조회
+          </button>
         </header>
 
         <section id="conversation" class="conversation" aria-live="polite">
@@ -309,6 +334,7 @@
       let sessionId = null;
       let mediaRecorder = null;
       let audioChunks = [];
+      let isFeedbackLoading = false;
 
       async function startSession() {
         const { response, body } = await requestJson("/api/sessions", {
@@ -328,6 +354,7 @@
         document.getElementById("resultLabel").textContent = "진행 중";
         document.getElementById("conversation").innerHTML = "";
         document.getElementById("feedbackBody").textContent = "아직 피드백이 없습니다.";
+        document.getElementById("feedbackButton").disabled = false;
         appendMessage("ai", body.assistant_message);
       }
 
@@ -394,21 +421,41 @@
         document.getElementById("turnLabel").textContent = body.remaining_turns;
         document.getElementById("resultLabel").textContent = body.scenario_result;
         if (body.scenario_result !== "in_progress") {
-          await loadFeedback();
+          await loadFeedback({ auto: true });
         }
       }
 
-      async function loadFeedback() {
+      async function loadFeedback({ auto = false } = {}) {
         if (!ensureSession()) return;
+        if (isFeedbackLoading) return;
+        setFeedbackLoading(
+          auto
+            ? "시나리오가 끝났습니다. 최종 피드백 생성 중입니다..."
+            : "피드백 생성 중입니다..."
+        );
         const { response, body } = await requestJson(
           `/api/sessions/${sessionId}/feedback`
         );
+        isFeedbackLoading = false;
+        document.getElementById("feedbackButton").disabled = false;
         if (!response || !response.ok) {
-          document.getElementById("feedbackBody").textContent =
-            body.detail || "피드백 조회에 실패했습니다.";
+          const feedbackBody = document.getElementById("feedbackBody");
+          feedbackBody.className = "notice";
+          feedbackBody.textContent = body.detail || "피드백 조회에 실패했습니다.";
           return;
         }
         renderFeedback(body);
+      }
+
+      function setFeedbackLoading(message) {
+        isFeedbackLoading = true;
+        document.getElementById("feedbackButton").disabled = true;
+        const feedbackBody = document.getElementById("feedbackBody");
+        feedbackBody.className = "feedback-loading";
+        feedbackBody.innerHTML = `
+          <span class="spinner" aria-hidden="true"></span>
+          <span>${escapeHtml(message)}</span>
+        `;
       }
 
       async function requestJson(url, options) {

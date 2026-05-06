@@ -166,6 +166,9 @@ def test_index_serves_demo_page():
     assert "white-space: pre-line" in response.text
     assert "이해도 ${body.understood_score}" not in response.text
     assert "대화별 피드백" in response.text
+    assert "피드백 생성 중" in response.text
+    assert "loadFeedback({ auto: true })" in response.text
+    assert "setFeedbackLoading" in response.text
 
 
 def test_text_turn_returns_warning_when_ollama_is_unavailable():
