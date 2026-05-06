@@ -18,6 +18,12 @@ class FakeEvaluator:
         )
 
 
+class FakeSTTAdapter:
+    def transcribe(self, audio_path):
+        assert audio_path.exists()
+        return "I want ice latte small size"
+
+
 def test_start_session_api_returns_opening_question():
     client = TestClient(create_app(evaluator=FakeEvaluator()))
 
@@ -64,3 +70,22 @@ def test_feedback_api_returns_fallback_feedback():
     assert response.json()["turn_feedback"][0]["user_said"] == (
         "I want ice latte small size"
     )
+
+
+def test_submit_audio_turn_api_uses_stt_adapter():
+    client = TestClient(
+        create_app(evaluator=FakeEvaluator(), stt_adapter=FakeSTTAdapter())
+    )
+    session_id = client.post(
+        "/api/sessions", json={"scenario_id": "cafe_order"}
+    ).json()["session_id"]
+
+    response = client.post(
+        f"/api/sessions/{session_id}/turns/audio",
+        files={"audio": ("sample.webm", b"fake audio bytes", "audio/webm")},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["transcript"] == "I want ice latte small size"
+    assert body["assistant_message"] == "Is that for here or to go?"

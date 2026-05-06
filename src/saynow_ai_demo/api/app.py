@@ -1,8 +1,10 @@
+import tempfile
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
+from saynow_ai_demo.adapters.stt import STTAdapter
 from saynow_ai_demo.api.schemas import (
     SessionResponse,
     StartSessionRequest,
@@ -14,11 +16,18 @@ from saynow_ai_demo.services.feedback import build_fallback_feedback
 from saynow_ai_demo.services.session_service import Evaluator, SessionService
 
 
-def create_app(evaluator: Evaluator | None = None) -> FastAPI:
+def create_app(
+    evaluator: Evaluator | None = None,
+    stt_adapter: STTAdapter | None = None,
+) -> FastAPI:
     if evaluator is None:
         from saynow_ai_demo.adapters.llm import OllamaEvaluator
 
         evaluator = OllamaEvaluator()
+    if stt_adapter is None:
+        from saynow_ai_demo.adapters.stt import FasterWhisperSTTAdapter
+
+        stt_adapter = FasterWhisperSTTAdapter()
 
     service = SessionService(evaluator=evaluator)
     app = FastAPI(title="Say Now AI Demo")
@@ -43,23 +52,16 @@ def create_app(evaluator: Evaluator | None = None) -> FastAPI:
 
     @app.post("/api/sessions/{session_id}/turns/text", response_model=TurnResponse)
     def submit_text_turn(session_id: str, request: TextTurnRequest):
-        try:
-            turn = service.submit_transcript(session_id, request.transcript)
-            session = service.get_session(session_id)
-        except (KeyError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return TurnResponse(
-            turn_id=turn.id,
-            transcript=turn.transcript,
-            understood_score=turn.understood_score,
-            interpreted_as=turn.interpreted_as,
-            filled_slots=turn.filled_slots,
-            missing_slots=list(turn.missing_slots),
-            is_scenario_complete=is_complete(session),
-            scenario_result=session.result,
-            assistant_message=turn.assistant_message,
-            remaining_turns=session.remaining_turns,
-        )
+        return _submit_transcript_response(service, session_id, request.transcript)
+
+    @app.post("/api/sessions/{session_id}/turns/audio", response_model=TurnResponse)
+    async def submit_audio_turn(session_id: str, audio: UploadFile = File(...)):
+        suffix = Path(audio.filename or "audio.webm").suffix or ".webm"
+        with tempfile.NamedTemporaryFile(delete=True, suffix=suffix) as tmp:
+            tmp.write(await audio.read())
+            tmp.flush()
+            transcript = stt_adapter.transcribe(Path(tmp.name))
+        return _submit_transcript_response(service, session_id, transcript)
 
     @app.get("/api/sessions/{session_id}/feedback")
     def get_feedback(session_id: str):
@@ -70,3 +72,27 @@ def create_app(evaluator: Evaluator | None = None) -> FastAPI:
         return build_fallback_feedback(session)
 
     return app
+
+
+def _submit_transcript_response(
+    service: SessionService,
+    session_id: str,
+    transcript: str,
+) -> TurnResponse:
+    try:
+        turn = service.submit_transcript(session_id, transcript)
+        session = service.get_session(session_id)
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return TurnResponse(
+        turn_id=turn.id,
+        transcript=turn.transcript,
+        understood_score=turn.understood_score,
+        interpreted_as=turn.interpreted_as,
+        filled_slots=turn.filled_slots,
+        missing_slots=list(turn.missing_slots),
+        is_scenario_complete=is_complete(session),
+        scenario_result=session.result,
+        assistant_message=turn.assistant_message,
+        remaining_turns=session.remaining_turns,
+    )
