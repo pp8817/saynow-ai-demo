@@ -516,6 +516,11 @@
         return labels[slot] || slot;
       }
 
+      function numberOrZero(value) {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : 0;
+      }
+
       function renderFeedback(feedback) {
         const body = document.getElementById("feedbackBody");
         const turns = feedback.turn_feedback
@@ -524,8 +529,16 @@
               <div class="feedback-block">
                 <strong>내 답변: ${escapeHtml(turn.user_said)}</strong>
                 <div class="notice">AI 응답: ${escapeHtml(turn.ai_question)}</div>
+                <div>
+                  <strong>외국인 이해도</strong>
+                  <span>${numberOrZero(turn.understood_score)}%</span>
+                  <span class="ok">+${numberOrZero(turn.score_delta)}%</span>
+                </div>
                 <div>${escapeHtml(turn.heard_as)}</div>
-                <div class="ok">${escapeHtml(turn.better_expression)}</div>
+                <div class="ok">+1 표현: ${escapeHtml(turn.better_expression)}</div>
+                <div class="notice">
+                  이 표현을 쓰면 약 ${numberOrZero(turn.improved_understood_score)}%까지 이해될 가능성이 있어요.
+                </div>
                 <div class="notice">${escapeHtml(turn.reason)}</div>
               </div>
             `

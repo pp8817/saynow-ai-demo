@@ -163,6 +163,9 @@ def test_index_serves_demo_page():
     assert "white-space: pre-line" in response.text
     assert "이해도 ${body.understood_score}" not in response.text
     assert "대화별 피드백" in response.text
+    assert "외국인 이해도" in response.text
+    assert "+1 표현" in response.text
+    assert "numberOrZero" in response.text
     assert "피드백 생성 중" in response.text
     assert "loadFeedback({ auto: true })" in response.text
     assert "setFeedbackLoading" in response.text
