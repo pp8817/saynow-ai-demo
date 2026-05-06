@@ -299,6 +299,13 @@ def _better_expression_for_turn(turn: Turn, session: SessionState) -> str:
         return f"{temperature.capitalize()}, please."
     if drink and ("ice latte" in lowered or "lce latte" in lowered):
         return f"I want an iced {drink}."
+    if drink and size and temperature and lowered.startswith("i want "):
+        return _plus_one_full_drink_order(
+            lowered=lowered,
+            size=size,
+            temperature=temperature,
+            drink=drink,
+        )
     if drink and size and lowered.startswith("i want "):
         return f"I want a {size} {drink}."
     if drink and temperature and lowered.startswith("i want "):
@@ -347,6 +354,21 @@ def _default_better_expression(session: SessionState) -> str:
     if session.scenario.id == "cafe_order":
         return "Can I get a small iced latte to go?"
     return "Could you help me with this?"
+
+
+def _plus_one_full_drink_order(
+    *,
+    lowered: str,
+    size: str,
+    temperature: str,
+    drink: str,
+) -> str:
+    order_phrase = f"{size} {temperature} {drink}"
+    article = "an" if order_phrase[0] in "aeiou" else "a"
+    complete_order = f"I want {article} {order_phrase}"
+    if complete_order.lower() in lowered and "please" not in lowered:
+        return f"{complete_order}, please."
+    return f"{complete_order}."
 
 
 def _is_missed_follow_up_answer(turn: Turn) -> bool:

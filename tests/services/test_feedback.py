@@ -266,6 +266,33 @@ def test_feedback_uses_plus_one_expression_instead_of_perfect_sentence():
     )
 
 
+def test_feedback_preserves_size_and_temperature_in_plus_one_expression():
+    session = SessionState(id="s1", scenario=get_scenario("cafe_order"))
+    session.result = "success"
+    session.turns.append(
+        Turn(
+            id="turn-1",
+            transcript="I want a small iced latte.",
+            filled_slots={
+                "drink": "latte",
+                "size": "small",
+                "temperature": "iced",
+            },
+            missing_slots=("for_here_or_to_go",),
+            assistant_message="Is that for here or to go?",
+        )
+    )
+
+    feedback = build_rule_based_feedback(session)
+    turn_feedback = feedback["turn_feedback"][0]
+
+    assert turn_feedback["better_expression"] == (
+        "I want a small iced latte, please."
+    )
+    assert "small" in turn_feedback["better_expression"]
+    assert "iced" in turn_feedback["better_expression"]
+
+
 def test_feedback_keeps_short_answers_as_small_plus_one_changes():
     session = SessionState(id="s1", scenario=get_scenario("cafe_order"))
     session.result = "success"
