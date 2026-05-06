@@ -68,32 +68,40 @@ def build_rule_based_feedback(session: SessionState) -> dict[str, Any]:
         "scenario_result": session.result,
         "total_understood_score": _fallback_total_score(session),
         "summary": _summary_for_session(session),
-        "turn_feedback": [
-            {
-                "user_said": turn.transcript,
-                "ai_question": turn.assistant_message,
-                "heard_as": _fallback_heard_as(turn),
-                "better_expression": _default_better_expression(session),
-                "reason": "더 자연스럽고 완성된 문장으로 말하면 실제 상황에서 더 안정적으로 전달됩니다.",
-            }
-            for turn in session.turns
-        ],
+        "turn_feedback": [_feedback_for_turn(turn, session) for turn in session.turns],
+    }
+
+
+def _feedback_for_turn(turn: Turn, session: SessionState) -> dict[str, object]:
+    understood_score = _turn_understood_score(turn)
+    score_delta = _score_delta_for_turn(turn)
+    return {
+        "user_said": turn.transcript,
+        "ai_question": turn.assistant_message,
+        "heard_as": _fallback_heard_as(turn),
+        "understood_score": understood_score,
+        "better_expression": _better_expression_for_turn(turn, session),
+        "score_delta": score_delta,
+        "improved_understood_score": min(98, understood_score + score_delta),
+        "reason": _reason_for_turn(turn),
     }
 
 
 def _normalize_turn_feedback(
     payload: dict[str, Any],
     session: SessionState,
-) -> list[dict[str, str]]:
+) -> list[dict[str, object]]:
     raw_items = payload.get("turn_feedback")
     if not isinstance(raw_items, list):
         return build_rule_based_feedback(session)["turn_feedback"]
 
-    normalized: list[dict[str, str]] = []
+    normalized: list[dict[str, object]] = []
     for index, turn in enumerate(session.turns):
         raw_item = raw_items[index] if index < len(raw_items) else {}
         if not isinstance(raw_item, dict):
             raw_item = {}
+        understood_score = _turn_understood_score(turn)
+        score_delta = _score_delta_for_turn(turn)
         normalized.append(
             {
                 "user_said": str(raw_item.get("user_said") or turn.transcript),
@@ -104,7 +112,10 @@ def _normalize_turn_feedback(
                     raw_item.get("heard_as"),
                     turn,
                 ),
+                "understood_score": understood_score,
                 "better_expression": _better_expression_for_turn(turn, session),
+                "score_delta": score_delta,
+                "improved_understood_score": min(98, understood_score + score_delta),
                 "reason": _reason_for_turn(turn),
             }
         )
@@ -210,6 +221,45 @@ def _fallback_total_score(session: SessionState) -> int:
     return 0
 
 
+def _turn_understood_score(turn: Turn) -> int:
+    if not turn.transcript.strip():
+        return 35
+
+    score = 45 + (len(turn.filled_slots) * 15)
+    text = turn.transcript.lower().strip()
+    if _looks_like_complete_sentence(text):
+        score += 10
+    if _has_common_transcription_issue(text):
+        score -= 10
+    if not turn.filled_slots:
+        score -= 20
+    return max(35, min(score, 95))
+
+
+def _looks_like_complete_sentence(text: str) -> bool:
+    starters = ("i want ", "i'd like ", "i would like ", "can i get ", "could i get ")
+    return text.startswith(starters)
+
+
+def _has_common_transcription_issue(text: str) -> bool:
+    issue_patterns = (" lce ", " ice latte", " im ", " i'm to go")
+    padded = f" {text} "
+    return any(pattern in padded for pattern in issue_patterns)
+
+
+def _score_delta_for_turn(turn: Turn) -> int:
+    text = turn.transcript.lower().strip()
+    if not turn.filled_slots:
+        return 15
+    if text in {"here", "to go", "iced", "hot"}:
+        return 3
+    if text in {"small", "medium", "large", "small size", "medium size", "large size"}:
+        return 10
+    if "ice latte" in text or "lce latte" in text:
+        return 12
+    return 8
+
+
 def _summary_for_session(session: SessionState) -> str:
     if session.result == "success":
         return "대화 전체를 보면 필요한 정보가 전달되어 시나리오를 완료했어요."
@@ -219,6 +269,7 @@ def _summary_for_session(session: SessionState) -> str:
 
 
 def _better_expression_for_turn(turn: Turn, session: SessionState) -> str:
+    lowered = turn.transcript.strip().lower()
     slots = turn.filled_slots
     drink = _english_drink(slots.get("drink") or _drink_from_transcript(turn.transcript))
     size = _english_size(slots.get("size", ""))
@@ -231,27 +282,47 @@ def _better_expression_for_turn(turn: Turn, session: SessionState) -> str:
         if "here" in destination:
             return "For here, please."
 
-    if drink and size and temperature:
-        return f"Can I get a {size} {temperature} {drink}, please?"
-    if drink and size:
-        return f"Can I get a {size} {drink}, please?"
-    if drink and temperature:
-        article = "an" if temperature == "iced" else "a"
-        return f"Can I get {article} {temperature} {drink}, please?"
-    if size:
-        return f"A {size} one, please."
-    if temperature:
+    if size and not drink and not temperature:
+        return f"{size.capitalize()}, please."
+    if temperature and not drink and not size:
         return f"{temperature.capitalize()}, please."
+    if drink and ("ice latte" in lowered or "lce latte" in lowered):
+        return f"I want an iced {drink}."
+    if drink and size and lowered.startswith("i want "):
+        return f"I want a {size} {drink}."
+    if drink and temperature and lowered.startswith("i want "):
+        article = "an" if temperature == "iced" else "a"
+        return f"I want {article} {temperature} {drink}."
+    if drink and lowered.startswith("i want "):
+        return f"I want a {drink}."
+    if drink and size and temperature:
+        return f"A {size} {temperature} {drink}, please."
+    if drink and size:
+        return f"A {size} {drink}, please."
+    if drink and temperature:
+        article = "An" if temperature == "iced" else "A"
+        return f"{article} {temperature} {drink}, please."
     if drink:
-        return f"Can I get a {drink}, please?"
+        return f"A {drink}, please."
 
     return _default_better_expression(session)
 
 
 def _reason_for_turn(turn: Turn) -> str:
-    if turn.filled_slots:
-        return "주문할 때는 완성된 문장으로 말하면 더 자연스럽게 들려요."
-    return "더 자연스럽고 완성된 문장으로 말하면 실제 상황에서 더 안정적으로 전달됩니다."
+    text = turn.transcript.lower().strip()
+    slots = turn.filled_slots
+    if "ice latte" in text or "lce latte" in text:
+        return (
+            "지금 문장에서 크게 바꾸지 않고, 'ice latte'만 자연스러운 "
+            "'iced latte'로 고쳤어요."
+        )
+    if "for_here_or_to_go" in slots:
+        return "짧게 답해도 통하지만, 'please'를 붙이면 더 자연스럽게 들려요."
+    if text in {"small", "medium", "large", "small size", "medium size", "large size"}:
+        return "단어만 말해도 통하지만, 'please'를 붙이면 더 부드럽게 들려요."
+    if slots:
+        return "기존 표현은 유지하고, 관사나 어순만 조금 더 자연스럽게 다듬었어요."
+    return "뜻이 더 잘 전달되도록 최소한의 표현만 보완했어요."
 
 
 def _default_better_expression(session: SessionState) -> str:

@@ -25,7 +25,8 @@ def test_build_rule_based_feedback_summarizes_conversation_after_session_ends():
     assert feedback["scenario_result"] == "success"
     assert feedback["total_understood_score"] == 80
     assert feedback["turn_feedback"][0]["user_said"] == "I want ice latte small size"
-    assert "understood_score" not in feedback["turn_feedback"][0]
+    assert feedback["turn_feedback"][0]["understood_score"] == 60
+    assert feedback["turn_feedback"][0]["score_delta"] == 12
     assert feedback["turn_feedback"][0]["ai_question"] == "Is that for here or to go?"
 
 
@@ -62,7 +63,8 @@ def test_parse_session_feedback_returns_total_score_and_turn_feedback():
     assert feedback["scenario_result"] == "success"
     assert feedback["total_understood_score"] == 76
     assert feedback["turn_feedback"][0]["heard_as"].startswith("외국인은")
-    assert "understood_score" not in feedback["turn_feedback"][0]
+    assert feedback["turn_feedback"][0]["understood_score"] == 70
+    assert feedback["turn_feedback"][0]["score_delta"] == 8
 
 
 def test_build_feedback_prompt_does_not_request_heard_as_from_llm():
@@ -213,7 +215,82 @@ def test_parse_session_feedback_prefers_slot_based_better_expression():
     feedback = parse_session_feedback(raw, session)
     turn_feedback = feedback["turn_feedback"][0]
 
-    assert turn_feedback["better_expression"] == "Can I get a small latte, please?"
+    assert turn_feedback["better_expression"] == "I want a small latte."
     assert turn_feedback["reason"] == (
-        "주문할 때는 완성된 문장으로 말하면 더 자연스럽게 들려요."
+        "기존 표현은 유지하고, 관사나 어순만 조금 더 자연스럽게 다듬었어요."
     )
+
+
+def test_rule_based_feedback_includes_turn_score_and_score_lift():
+    session = SessionState(id="s1", scenario=get_scenario("cafe_order"))
+    session.result = "success"
+    session.turns.append(
+        Turn(
+            id="turn-1",
+            transcript="I want ice latte",
+            filled_slots={"drink": "latte", "temperature": "iced"},
+            missing_slots=("size", "for_here_or_to_go"),
+            assistant_message="What size would you like?",
+        )
+    )
+
+    feedback = build_rule_based_feedback(session)
+    turn_feedback = feedback["turn_feedback"][0]
+
+    assert turn_feedback["understood_score"] == 75
+    assert turn_feedback["score_delta"] == 12
+    assert turn_feedback["improved_understood_score"] == 87
+
+
+def test_feedback_uses_plus_one_expression_instead_of_perfect_sentence():
+    session = SessionState(id="s1", scenario=get_scenario("cafe_order"))
+    session.result = "success"
+    session.turns.append(
+        Turn(
+            id="turn-1",
+            transcript="I want ice latte",
+            filled_slots={"drink": "latte", "temperature": "iced"},
+            missing_slots=("size", "for_here_or_to_go"),
+            assistant_message="What size would you like?",
+        )
+    )
+
+    feedback = build_rule_based_feedback(session)
+    turn_feedback = feedback["turn_feedback"][0]
+
+    assert turn_feedback["better_expression"] == "I want an iced latte."
+    assert turn_feedback["better_expression"] != "Can I get an iced latte, please?"
+    assert turn_feedback["reason"] == (
+        "지금 문장에서 크게 바꾸지 않고, 'ice latte'만 자연스러운 "
+        "'iced latte'로 고쳤어요."
+    )
+
+
+def test_feedback_keeps_short_answers_as_small_plus_one_changes():
+    session = SessionState(id="s1", scenario=get_scenario("cafe_order"))
+    session.result = "success"
+    session.turns.extend(
+        [
+            Turn(
+                id="turn-1",
+                transcript="small size",
+                filled_slots={"size": "small"},
+                missing_slots=("temperature", "for_here_or_to_go"),
+                assistant_message="Would you like it hot or iced?",
+            ),
+            Turn(
+                id="turn-2",
+                transcript="here",
+                filled_slots={"for_here_or_to_go": "for here"},
+                missing_slots=(),
+                assistant_message="Scenario cleared.",
+            ),
+        ]
+    )
+
+    feedback = build_rule_based_feedback(session)
+
+    assert feedback["turn_feedback"][0]["better_expression"] == "Small, please."
+    assert feedback["turn_feedback"][1]["better_expression"] == "For here, please."
+    assert feedback["turn_feedback"][0]["score_delta"] == 10
+    assert feedback["turn_feedback"][1]["score_delta"] == 3
