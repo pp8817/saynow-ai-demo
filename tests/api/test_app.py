@@ -159,7 +159,15 @@ def test_index_serves_demo_page():
     assert "Say Now AI Demo" in response.text
     assert "startSession" in response.text
     assert "상황 진행" not in response.text
-    assert "formatTurnSummary" in response.text
+    assert "missionStrip" in response.text
+    assert "renderMissionProgress" in response.text
+    assert "slotChip" in response.text
+    assert "voicePanel" in response.text
+    assert "waveform" in response.text
+    assert "scenarioPreview" in response.text
+    assert "feedbackScoreBand" in response.text
+    assert "scoreMeter" in response.text
+    assert "부족한 정보:" not in response.text
     assert "white-space: pre-line" in response.text
     assert "이해도 ${body.understood_score}" not in response.text
     assert "대화별 피드백" in response.text
