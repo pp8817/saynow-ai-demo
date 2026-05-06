@@ -182,6 +182,45 @@
         padding: 0 12px;
       }
 
+      .recording-status {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 28px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .recording-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--muted);
+        opacity: 0.45;
+      }
+
+      .recording-status.active {
+        color: var(--red);
+        font-weight: 700;
+      }
+
+      .recording-status.active .recording-dot {
+        background: var(--red);
+        opacity: 1;
+        animation: pulse 1s ease-in-out infinite;
+      }
+
+      .recording-status.submitting {
+        color: var(--orange-dark);
+      }
+
+      .recording-status.submitting .recording-dot {
+        background: var(--orange);
+        opacity: 1;
+        animation: pulse 1s ease-in-out infinite;
+      }
+
       .feedback {
         border: 1px solid var(--line);
         border-radius: 8px;
@@ -235,6 +274,19 @@
       @keyframes spin {
         to {
           transform: rotate(360deg);
+        }
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+
+        50% {
+          transform: scale(1.45);
+          opacity: 0.55;
         }
       }
 
@@ -321,6 +373,15 @@
           <button id="stopButton" type="button" onclick="stopRecording()" disabled>
             녹음 중지
           </button>
+          <div
+            id="recordingStatus"
+            class="recording-status"
+            aria-live="polite"
+          >
+            <span class="recording-dot" aria-hidden="true"></span>
+            <span id="recordingStatusText">녹음 대기</span>
+            <span id="recordingTimer">00:00</span>
+          </div>
         </section>
 
         <section class="feedback">
@@ -335,6 +396,8 @@
       let mediaRecorder = null;
       let audioChunks = [];
       let isFeedbackLoading = false;
+      let recordingStartedAt = null;
+      let recordingTimerId = null;
 
       async function startSession() {
         const { response, body } = await requestJson("/api/sessions", {
@@ -373,20 +436,53 @@
 
       async function startRecording() {
         if (!ensureSession()) return;
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        setRecordingStatus("submitting", "마이크 권한 확인 중", false);
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          });
+        } catch (error) {
+          setRecordingStatus("idle", "마이크 권한이 필요합니다", false);
+          appendMessage("system", `마이크를 사용할 수 없습니다: ${error.message}`);
+          return;
+        }
         audioChunks = [];
-        mediaRecorder = new MediaRecorder(stream);
+        const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : "";
+        mediaRecorder = new MediaRecorder(
+          stream,
+          mimeType ? { mimeType } : undefined
+        );
         mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) audioChunks.push(event.data);
         };
         mediaRecorder.onstop = async () => {
+          stopRecordingTimer();
           const blob = new Blob(audioChunks, { type: "audio/webm" });
           stream.getTracks().forEach((track) => track.stop());
-          await submitAudioBlob(blob);
+          if (!blob.size) {
+            setRecordingStatus("idle", "녹음된 음성이 없습니다", false);
+            return;
+          }
+          setRecordingStatus("submitting", "음성 인식 중", false);
+          const submitted = await submitAudioBlob(blob);
+          setRecordingStatus(
+            "idle",
+            submitted ? "녹음 대기" : "음성 제출 실패",
+            false
+          );
         };
-        mediaRecorder.start();
+        mediaRecorder.start(250);
         document.getElementById("recordButton").disabled = true;
         document.getElementById("stopButton").disabled = false;
+        document.getElementById("recordButton").textContent = "녹음 중";
+        startRecordingTimer();
       }
 
       async function stopRecording() {
@@ -394,13 +490,15 @@
         mediaRecorder.stop();
         document.getElementById("recordButton").disabled = false;
         document.getElementById("stopButton").disabled = true;
+        document.getElementById("recordButton").textContent = "녹음 시작";
+        setRecordingStatus("submitting", "녹음 저장 중", true);
       }
 
       async function submitAudioBlob(blob) {
         if (!ensureSession()) return;
         const formData = new FormData();
         formData.append("audio", blob, "recording.webm");
-        await submitTurn("/turns/audio", {
+        return await submitTurn("/turns/audio", {
           method: "POST",
           body: formData,
         });
@@ -413,7 +511,7 @@
         );
         if (!response || !response.ok) {
           appendMessage("system", body.detail || "턴 제출에 실패했습니다.");
-          return;
+          return false;
         }
 
         appendMessage("user", body.transcript);
@@ -423,6 +521,7 @@
         if (body.scenario_result !== "in_progress") {
           await loadFeedback({ auto: true });
         }
+        return true;
       }
 
       async function loadFeedback({ auto = false } = {}) {
@@ -456,6 +555,39 @@
           <span class="spinner" aria-hidden="true"></span>
           <span>${escapeHtml(message)}</span>
         `;
+      }
+
+      function startRecordingTimer() {
+        recordingStartedAt = Date.now();
+        updateRecordingTimer();
+        recordingTimerId = window.setInterval(updateRecordingTimer, 500);
+      }
+
+      function stopRecordingTimer() {
+        if (recordingTimerId) {
+          window.clearInterval(recordingTimerId);
+          recordingTimerId = null;
+        }
+      }
+
+      function updateRecordingTimer() {
+        if (!recordingStartedAt) return;
+        const elapsedSeconds = Math.floor((Date.now() - recordingStartedAt) / 1000);
+        const minutes = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
+        const seconds = String(elapsedSeconds % 60).padStart(2, "0");
+        document.getElementById("recordingTimer").textContent = `${minutes}:${seconds}`;
+        setRecordingStatus("active", "녹음 중", true);
+      }
+
+      function setRecordingStatus(mode, message, keepTimer) {
+        const status = document.getElementById("recordingStatus");
+        const statusText = document.getElementById("recordingStatusText");
+        status.className = `recording-status ${mode === "idle" ? "" : mode}`;
+        statusText.textContent = message;
+        if (!keepTimer) {
+          document.getElementById("recordingTimer").textContent = "00:00";
+          recordingStartedAt = null;
+        }
       }
 
       async function requestJson(url, options) {

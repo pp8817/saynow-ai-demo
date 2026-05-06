@@ -542,6 +542,66 @@ Say Now의 핵심 가치는 “내 영어가 실제로 통하는지 확인하고
 
 ---
 
+## 2026-05-06 - STT 도메인 힌트와 녹음 상태 표시 강화
+
+### 변경 전
+
+STT는 `faster-whisper` 기본 호출에 가깝게 동작했다.
+
+```text
+model.transcribe(audio, language="en")
+```
+
+브라우저에서는 녹음 시작/중지 버튼의 disabled 상태만 바뀌어서, 사용자가 지금 녹음 중인지, 저장 중인지, 음성 인식 중인지 구별하기 어려웠다.
+
+### 변경 후
+
+STT 호출에 카페 주문 도메인 힌트와 안정적인 디코딩 옵션을 추가했다.
+
+```text
+beam_size=5
+vad_filter=True
+condition_on_previous_text=False
+initial_prompt="iced latte, small size, for here, to go ..."
+```
+
+또한 STT 결과에 다음과 같은 MVP용 후처리를 추가했다.
+
+```text
+nice latte → iced latte
+lce latte → iced latte
+ice latte → iced latte
+small sides → small size
+for hair → for here
+two go → to go
+```
+
+프론트에는 녹음 상태 배지, 빨간 점 애니메이션, 녹음 시간, 저장/음성 인식 중 상태를 추가했다.
+
+### 변경 이유
+
+로컬 STT는 상용 STT보다 짧은 초보자 발화와 카페 주문 표현에서 흔들릴 수 있다. 특히 `ice latte`, `small size`, `for here`처럼 짧고 발음이 약한 표현은 오인식되기 쉽다.
+
+MVP에서는 발음 정밀 채점보다 시나리오 진행이 중요하므로, 명확한 카페 주문 표현은 후처리로 보정해 대화 진행 안정성을 높인다.
+
+### 성능 영향
+
+`beam_size=5`는 인식 품질을 높일 수 있지만, CPU 환경에서는 STT 처리 시간이 조금 늘 수 있다. VAD는 침묵 구간을 줄여 불필요한 인식 흔들림을 줄이는 데 도움이 된다.
+
+### 비용 영향
+
+로컬 실행이므로 API 비용 변화는 없다.
+
+### 리소스 영향
+
+추가 모델은 사용하지 않는다. 디코딩 beam이 늘어 CPU 사용량이 소폭 증가할 수 있다.
+
+### 구현 복잡도 영향
+
+STT 후처리 규칙과 녹음 UI 상태 관리가 추가됐다. 대신 사용자는 녹음 상태를 명확히 알 수 있고, 카페 주문 데모에서 흔한 오인식이 줄어든다.
+
+---
+
 ## 변경 기록 템플릿
 
 ```markdown

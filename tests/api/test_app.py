@@ -166,6 +166,9 @@ def test_index_serves_demo_page():
     assert "외국인 이해도" in response.text
     assert "+1 표현" in response.text
     assert "numberOrZero" in response.text
+    assert "recordingStatus" in response.text
+    assert "녹음 중" in response.text
+    assert "recordingTimer" in response.text
     assert "피드백 생성 중" in response.text
     assert "loadFeedback({ auto: true })" in response.text
     assert "setFeedbackLoading" in response.text
