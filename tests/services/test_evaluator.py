@@ -55,3 +55,18 @@ def test_build_turn_prompt_contains_scenario_and_transcript():
     assert "drink" in prompt
     assert "small size please" in prompt
     assert "JSON" in prompt
+
+
+def test_build_turn_prompt_calibrates_beginner_expression_scores():
+    prompt = build_turn_prompt(
+        scenario_title="카페에서 주문하기",
+        required_slots=("drink", "temperature", "size"),
+        current_slots={},
+        transcript="I want latte",
+    )
+
+    assert "I want latte" in prompt
+    assert "Score calibration" in prompt
+    assert "78" in prompt
+    assert "Scenario completion is separate from understood_score" in prompt
+    assert "interpreted_as must be Korean" in prompt

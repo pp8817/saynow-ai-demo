@@ -164,6 +164,10 @@
         font-weight: 700;
       }
 
+      .message div {
+        white-space: pre-line;
+      }
+
       .composer {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto auto auto;
@@ -386,10 +390,7 @@
         }
 
         appendMessage("user", body.transcript);
-        appendMessage(
-          "ai",
-          `${body.assistant_message}\n\n이해도 ${body.understood_score}% · ${body.interpreted_as}`
-        );
+        appendMessage("ai", formatTurnSummary(body));
         document.getElementById("turnLabel").textContent = body.remaining_turns;
         document.getElementById("resultLabel").textContent = body.scenario_result;
         if (body.scenario_result !== "in_progress") {
@@ -443,6 +444,35 @@
         message.append(label, content);
         conversation.appendChild(message);
         conversation.scrollTop = conversation.scrollHeight;
+      }
+
+      function formatTurnSummary(body) {
+        const filledSlots = Object.keys(body.filled_slots || {});
+        const missingSlots = body.missing_slots || [];
+        const totalSlots = filledSlots.length + missingSlots.length;
+        const progress =
+          totalSlots > 0 ? `${filledSlots.length}/${totalSlots}` : "0/0";
+        const missingText = missingSlots.length
+          ? missingSlots.map(slotLabel).join(", ")
+          : "없음";
+        return [
+          body.assistant_message,
+          "",
+          `이해도 ${body.understood_score}% · ${body.interpreted_as}`,
+          `상황 진행 ${progress}`,
+          `부족한 정보: ${missingText}`,
+        ].join("\n");
+      }
+
+      function slotLabel(slot) {
+        const labels = {
+          drink: "음료",
+          size: "사이즈",
+          temperature: "온도",
+          option: "옵션",
+          for_here_or_to_go: "매장/포장",
+        };
+        return labels[slot] || slot;
       }
 
       function renderFeedback(feedback) {
