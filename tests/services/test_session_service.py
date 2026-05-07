@@ -106,6 +106,30 @@ def test_submit_transcript_uses_transcript_slots_and_missing_slot_questions():
     assert service.get_session(session.id).result == "success"
 
 
+def test_submit_transcript_records_question_that_user_answered():
+    service = SessionService(
+        evaluator=FakeEvaluator(
+            [
+                TurnEvaluation(
+                    filled_slots={"drink": "latte"},
+                    follow_up_question="What size would you like?",
+                ),
+                TurnEvaluation(
+                    filled_slots={"size": "small"},
+                    follow_up_question="Would you like it hot or iced?",
+                ),
+            ]
+        )
+    )
+    session = service.start_session("cafe_order")
+
+    first_turn = service.submit_transcript(session.id, "I want latte")
+    second_turn = service.submit_transcript(session.id, "small")
+
+    assert first_turn.asked_question == "Hi! What would you like to order?"
+    assert second_turn.asked_question == "What size would you like?"
+
+
 def test_submit_transcript_does_not_fill_unasked_slot_when_follow_up_is_missed():
     service = SessionService(
         evaluator=FakeEvaluator(

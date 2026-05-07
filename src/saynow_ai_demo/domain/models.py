@@ -22,6 +22,7 @@ class Turn:
     filled_slots: dict[str, str]
     missing_slots: tuple[str, ...]
     assistant_message: str
+    asked_question: str = ""
 
 
 @dataclass

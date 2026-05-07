@@ -229,9 +229,9 @@ def _total_understood_score(session: SessionState) -> int:
         sum(_turn_understood_score(turn) for turn in session.turns) / len(session.turns)
     )
     if session.result == "success":
-        return min(95, average_turn_score + 12)
+        return min(95, average_turn_score + 5)
     if session.result == "failure":
-        return max(35, average_turn_score - 5)
+        return max(35, average_turn_score - 7)
     return average_turn_score
 
 
@@ -239,16 +239,25 @@ def _turn_understood_score(turn: Turn) -> int:
     if not turn.transcript.strip():
         return 35
 
-    score = 45 + (len(turn.filled_slots) * 15)
     text = turn.transcript.lower().strip()
-    if _looks_like_complete_sentence(text):
-        score += 10
-    if _has_common_transcription_issue(text):
-        score -= 10
-    if _is_polite_short_answer(text, turn):
-        score = max(score, 85)
     if not turn.filled_slots:
-        score -= 20
+        if _is_missed_follow_up_answer(turn):
+            return 50
+        return 45
+
+    expected_slot = _expected_slot_from_question(turn.asked_question)
+    if expected_slot and expected_slot not in turn.filled_slots:
+        return 50
+
+    if _answers_expected_slot(expected_slot, turn):
+        score = _score_for_expected_slot_answer(text, turn, expected_slot)
+    else:
+        score = _score_for_general_answer(text, turn)
+
+    if _has_common_transcription_issue(text):
+        score -= 8
+    if _has_hesitation(text):
+        score -= 5
     return max(35, min(score, 95))
 
 
@@ -257,14 +266,109 @@ def _looks_like_complete_sentence(text: str) -> bool:
     return text.startswith(starters)
 
 
+def _contains_ordering_phrase(text: str) -> bool:
+    phrases = ("i want", "i'd like", "i would like", "can i get", "could i get")
+    normalized = _spoken_normalize(text)
+    return any(phrase in normalized for phrase in phrases)
+
+
 def _has_common_transcription_issue(text: str) -> bool:
-    issue_patterns = (" lce ", " ice latte", " im ", " i'm to go")
+    issue_patterns = (" lce ", " ice latte", " im ", " i'm to go", " want to iced ")
     padded = f" {text} "
     return any(pattern in padded for pattern in issue_patterns)
 
 
+def _has_hesitation(text: str) -> bool:
+    return bool(re.match(r"^(ah|um|uh|er)\b", text))
+
+
+def _answers_expected_slot(expected_slot: str, turn: Turn) -> bool:
+    return bool(expected_slot and expected_slot in turn.filled_slots)
+
+
+def _score_for_expected_slot_answer(
+    text: str,
+    turn: Turn,
+    expected_slot: str,
+) -> int:
+    if len(turn.filled_slots) >= 3 and _looks_like_complete_sentence(text):
+        return 95
+    if _is_polite_short_answer(text, turn):
+        return 94
+    if expected_slot == "for_here_or_to_go" and _spoken_normalize(text) in {
+        "for here",
+        "to go",
+    }:
+        return 92
+    if expected_slot == "temperature" and _mentions_drink(text):
+        return 90
+    if _is_bare_slot_answer(text, turn):
+        return 88
+    if (
+        expected_slot == "drink"
+        and len(turn.filled_slots) >= 2
+        and _contains_ordering_phrase(text)
+    ):
+        return 90
+    if expected_slot == "drink" and _contains_ordering_phrase(text):
+        return 85
+    return 82
+
+
+def _score_for_general_answer(text: str, turn: Turn) -> int:
+    if len(turn.filled_slots) >= 3 and _looks_like_complete_sentence(text):
+        return 95
+    if len(turn.filled_slots) >= 2 and _looks_like_complete_sentence(text):
+        return 90
+    if _is_polite_short_answer(text, turn):
+        return 94
+    if _is_bare_slot_answer(text, turn):
+        return 88
+    if _looks_like_complete_sentence(text):
+        return 85
+    return 75
+
+
+def _expected_slot_from_question(question: str) -> str:
+    normalized = _spoken_normalize(question)
+    if "what size" in normalized:
+        return "size"
+    if "hot or iced" in normalized or "hot or cold" in normalized:
+        return "temperature"
+    if "for here or to go" in normalized:
+        return "for_here_or_to_go"
+    if "what would you like to order" in normalized:
+        return "drink"
+    return ""
+
+
 def _is_polite_short_answer(text: str, turn: Turn) -> bool:
     return bool(turn.filled_slots and "please" in text and len(text.split()) <= 4)
+
+
+def _is_bare_slot_answer(text: str, turn: Turn) -> bool:
+    normalized = _spoken_normalize(text)
+    slot_values = {_spoken_normalize(value) for value in turn.filled_slots.values()}
+    short_answers = {
+        "small",
+        "small size",
+        "medium",
+        "medium size",
+        "large",
+        "large size",
+        "iced",
+        "ice",
+        "hot",
+        "cold",
+        "here",
+        "for here",
+        "to go",
+    }
+    return normalized in slot_values or normalized in short_answers
+
+
+def _mentions_drink(text: str) -> bool:
+    return any(drink in text for drink in ("coffee", "latte", "americano"))
 
 
 def _score_delta_for_turn(turn: Turn) -> int:

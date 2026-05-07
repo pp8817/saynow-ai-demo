@@ -23,9 +23,9 @@ def test_build_rule_based_feedback_summarizes_conversation_after_session_ends():
     feedback = build_rule_based_feedback(session)
 
     assert feedback["scenario_result"] == "success"
-    assert feedback["total_understood_score"] == 72
+    assert feedback["total_understood_score"] == 82
     assert feedback["turn_feedback"][0]["user_said"] == "I want ice latte small size"
-    assert feedback["turn_feedback"][0]["understood_score"] == 60
+    assert feedback["turn_feedback"][0]["understood_score"] == 77
     assert feedback["turn_feedback"][0]["score_delta"] == 12
     assert feedback["turn_feedback"][0]["ai_question"] == "Is that for here or to go?"
 
@@ -61,9 +61,9 @@ def test_parse_session_feedback_returns_total_score_and_turn_feedback():
     feedback = parse_session_feedback(raw, session)
 
     assert feedback["scenario_result"] == "success"
-    assert feedback["total_understood_score"] == 82
+    assert feedback["total_understood_score"] == 90
     assert feedback["turn_feedback"][0]["heard_as"].startswith("외국인은")
-    assert feedback["turn_feedback"][0]["understood_score"] == 70
+    assert feedback["turn_feedback"][0]["understood_score"] == 85
     assert feedback["turn_feedback"][0]["score_delta"] == 8
 
 
@@ -237,9 +237,9 @@ def test_rule_based_feedback_includes_turn_score_and_score_lift():
     feedback = build_rule_based_feedback(session)
     turn_feedback = feedback["turn_feedback"][0]
 
-    assert turn_feedback["understood_score"] == 75
+    assert turn_feedback["understood_score"] == 82
     assert turn_feedback["score_delta"] == 12
-    assert turn_feedback["improved_understood_score"] == 87
+    assert turn_feedback["improved_understood_score"] == 94
 
 
 def test_feedback_uses_plus_one_expression_instead_of_perfect_sentence():
@@ -330,6 +330,7 @@ def test_feedback_marks_spoken_equivalent_expression_as_already_good():
         Turn(
             id="turn-1",
             transcript="small, please",
+            asked_question="What size would you like?",
             filled_slots={"size": "small"},
             missing_slots=("temperature", "for_here_or_to_go"),
             assistant_message="Would you like it hot or iced?",
@@ -342,7 +343,7 @@ def test_feedback_marks_spoken_equivalent_expression_as_already_good():
     assert turn_feedback["expression_status"] == "already_good"
     assert turn_feedback["display_message"] == "이미 충분히 자연스럽게 답했어요."
     assert turn_feedback["better_expression"] == ""
-    assert turn_feedback["understood_score"] == 85
+    assert turn_feedback["understood_score"] == 94
     assert turn_feedback["score_delta"] == 0
     assert turn_feedback["improved_understood_score"] == (
         turn_feedback["understood_score"]
@@ -369,6 +370,97 @@ def test_feedback_accepts_meaningful_spoken_plus_one_expression():
     assert turn_feedback["display_message"] == "+1 표현: Small, please."
     assert turn_feedback["better_expression"] == "Small, please."
     assert turn_feedback["score_delta"] == 10
+
+
+def test_context_based_score_gives_high_score_to_bare_correct_short_answer():
+    session = SessionState(id="s1", scenario=get_scenario("cafe_order"))
+    session.result = "success"
+    session.turns.append(
+        Turn(
+            id="turn-1",
+            transcript="small",
+            asked_question="What size would you like?",
+            filled_slots={"size": "small"},
+            missing_slots=("temperature", "for_here_or_to_go"),
+            assistant_message="Would you like it hot or iced?",
+        )
+    )
+
+    feedback = build_rule_based_feedback(session)
+
+    assert feedback["turn_feedback"][0]["understood_score"] == 88
+
+
+def test_context_based_score_penalizes_answer_to_wrong_question():
+    session = SessionState(id="s1", scenario=get_scenario("cafe_order"))
+    session.result = "success"
+    session.turns.append(
+        Turn(
+            id="turn-1",
+            transcript="to go",
+            asked_question="What size would you like?",
+            filled_slots={},
+            missing_slots=("size", "for_here_or_to_go"),
+            assistant_message="What size would you like?",
+        )
+    )
+
+    feedback = build_rule_based_feedback(session)
+
+    assert feedback["turn_feedback"][0]["understood_score"] == 50
+
+
+def test_context_based_score_handles_ordering_examples():
+    session = SessionState(id="s1", scenario=get_scenario("cafe_order"))
+    session.result = "success"
+    session.turns.extend(
+        [
+            Turn(
+                id="turn-1",
+                transcript="ah... I want coffee",
+                asked_question="Hi! What would you like to order?",
+                filled_slots={"drink": "coffee"},
+                missing_slots=("size", "temperature", "for_here_or_to_go"),
+                assistant_message="What size would you like?",
+            ),
+            Turn(
+                id="turn-2",
+                transcript="I want a small iced latte",
+                asked_question="Hi! What would you like to order?",
+                filled_slots={
+                    "drink": "latte",
+                    "size": "small",
+                    "temperature": "iced",
+                },
+                missing_slots=("for_here_or_to_go",),
+                assistant_message="Is that for here or to go?",
+            ),
+            Turn(
+                id="turn-3",
+                transcript="I want to iced latte",
+                asked_question="Hi! What would you like to order?",
+                filled_slots={"drink": "latte", "temperature": "iced"},
+                missing_slots=("size", "for_here_or_to_go"),
+                assistant_message="What size would you like?",
+            ),
+            Turn(
+                id="turn-4",
+                transcript="hot coffee",
+                asked_question="Would you like it hot or iced?",
+                filled_slots={"temperature": "hot"},
+                missing_slots=("for_here_or_to_go",),
+                assistant_message="Is that for here or to go?",
+            ),
+        ]
+    )
+
+    feedback = build_rule_based_feedback(session)
+    scores = [
+        turn_feedback["understood_score"]
+        for turn_feedback in feedback["turn_feedback"]
+    ]
+
+    assert scores == [80, 95, 82, 90]
 
 
 def test_parse_session_feedback_uses_server_total_score_instead_of_llm_score():
@@ -416,7 +508,7 @@ def test_parse_session_feedback_uses_server_total_score_instead_of_llm_score():
 
     feedback = parse_session_feedback(raw, session)
 
-    assert feedback["total_understood_score"] == 72
+    assert feedback["total_understood_score"] == 82
 
 
 def test_feedback_explains_when_answer_does_not_match_current_question():

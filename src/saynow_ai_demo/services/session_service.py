@@ -45,6 +45,7 @@ class SessionService:
         if session.result != "in_progress":
             raise ValueError(f"session already finished: {session.result}")
 
+        asked_question = _question_for_next_turn(session)
         missing_slots_before_turn = get_missing_slots(session)
         evaluation = self._evaluator.evaluate(
             scenario=session.scenario,
@@ -84,9 +85,16 @@ class SessionService:
             filled_slots=dict(newly_filled_slots),
             missing_slots=missing_slots,
             assistant_message=assistant_message,
+            asked_question=asked_question,
         )
         session.turns.append(turn)
         return turn
+
+
+def _question_for_next_turn(session: SessionState) -> str:
+    if not session.turns:
+        return session.scenario.opening_question
+    return session.turns[-1].assistant_message
 
 
 def _filter_slots_for_current_question(
