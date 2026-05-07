@@ -173,6 +173,8 @@ def test_index_serves_demo_page():
     assert "대화별 피드백" in response.text
     assert "외국인 이해도" in response.text
     assert "+1 표현" in response.text
+    assert "expressionMessage" in response.text
+    assert "이미 충분히 자연스럽게 답했어요" in response.text
     assert "numberOrZero" in response.text
     assert "recordingStatus" in response.text
     assert "녹음 중" in response.text

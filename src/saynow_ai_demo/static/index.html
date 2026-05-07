@@ -1068,7 +1068,7 @@
                 </header>
                 ${scoreMeter(turn)}
                 <div>${escapeHtml(turn.heard_as)}</div>
-                <div class="expression">+1 표현: ${escapeHtml(turn.better_expression)}</div>
+                <div class="expression">${escapeHtml(expressionMessage(turn))}</div>
                 <div class="notice">${escapeHtml(turn.reason)}</div>
               </article>
             `
@@ -1121,6 +1121,15 @@
             </div>
           </div>
         `;
+      }
+
+      function expressionMessage(turn) {
+        return (
+          turn.display_message ||
+          (turn.expression_status === "already_good"
+            ? "이미 충분히 자연스럽게 답했어요."
+            : `+1 표현: ${turn.better_expression || ""}`)
+        );
       }
 
       function ensureSession() {

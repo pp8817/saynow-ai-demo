@@ -73,16 +73,19 @@ def build_rule_based_feedback(session: SessionState) -> dict[str, Any]:
 
 def _feedback_for_turn(turn: Turn, session: SessionState) -> dict[str, object]:
     understood_score = _turn_understood_score(turn)
-    score_delta = _score_delta_for_turn(turn)
+    expression_feedback = _expression_feedback_for_turn(turn, session)
+    score_delta = int(expression_feedback["score_delta"])
     return {
         "user_said": turn.transcript,
         "ai_question": turn.assistant_message,
         "heard_as": _fallback_heard_as(turn),
         "understood_score": understood_score,
-        "better_expression": _better_expression_for_turn(turn, session),
+        "better_expression": expression_feedback["better_expression"],
+        "expression_status": expression_feedback["expression_status"],
+        "display_message": expression_feedback["display_message"],
         "score_delta": score_delta,
         "improved_understood_score": min(98, understood_score + score_delta),
-        "reason": _reason_for_turn(turn),
+        "reason": expression_feedback["reason"],
     }
 
 
@@ -100,7 +103,8 @@ def _normalize_turn_feedback(
         if not isinstance(raw_item, dict):
             raw_item = {}
         understood_score = _turn_understood_score(turn)
-        score_delta = _score_delta_for_turn(turn)
+        expression_feedback = _expression_feedback_for_turn(turn, session)
+        score_delta = int(expression_feedback["score_delta"])
         normalized.append(
             {
                 "user_said": str(raw_item.get("user_said") or turn.transcript),
@@ -112,10 +116,12 @@ def _normalize_turn_feedback(
                     turn,
                 ),
                 "understood_score": understood_score,
-                "better_expression": _better_expression_for_turn(turn, session),
+                "better_expression": expression_feedback["better_expression"],
+                "expression_status": expression_feedback["expression_status"],
+                "display_message": expression_feedback["display_message"],
                 "score_delta": score_delta,
                 "improved_understood_score": min(98, understood_score + score_delta),
-                "reason": _reason_for_turn(turn),
+                "reason": expression_feedback["reason"],
             }
         )
     return normalized
@@ -239,6 +245,8 @@ def _turn_understood_score(turn: Turn) -> int:
         score += 10
     if _has_common_transcription_issue(text):
         score -= 10
+    if _is_polite_short_answer(text, turn):
+        score = max(score, 85)
     if not turn.filled_slots:
         score -= 20
     return max(35, min(score, 95))
@@ -253,6 +261,10 @@ def _has_common_transcription_issue(text: str) -> bool:
     issue_patterns = (" lce ", " ice latte", " im ", " i'm to go")
     padded = f" {text} "
     return any(pattern in padded for pattern in issue_patterns)
+
+
+def _is_polite_short_answer(text: str, turn: Turn) -> bool:
+    return bool(turn.filled_slots and "please" in text and len(text.split()) <= 4)
 
 
 def _score_delta_for_turn(turn: Turn) -> int:
@@ -274,6 +286,39 @@ def _summary_for_session(session: SessionState) -> str:
     if session.result == "failure":
         return "대화 전체를 보면 일부 정보가 부족해서 시나리오를 완료하지 못했어요."
     return "세션이 끝나면 전체 대화를 기준으로 최종 피드백을 확인할 수 있어요."
+
+
+def _expression_feedback_for_turn(
+    turn: Turn,
+    session: SessionState,
+) -> dict[str, object]:
+    better_expression = _better_expression_for_turn(turn, session)
+    reason = _reason_for_turn(turn)
+    if _is_missed_follow_up_answer(turn):
+        return {
+            "better_expression": better_expression,
+            "expression_status": "context_mismatch",
+            "display_message": f"질문에 맞춰 답해보세요: {better_expression}",
+            "score_delta": _score_delta_for_turn(turn),
+            "reason": reason,
+        }
+    if not better_expression or _spoken_normalize(turn.transcript) == _spoken_normalize(
+        better_expression
+    ):
+        return {
+            "better_expression": "",
+            "expression_status": "already_good",
+            "display_message": "이미 충분히 자연스럽게 답했어요.",
+            "score_delta": 0,
+            "reason": "스피킹 기준으로는 대소문자나 구두점 차이가 의미 있는 개선이 아니에요.",
+        }
+    return {
+        "better_expression": better_expression,
+        "expression_status": "plus_one",
+        "display_message": f"+1 표현: {better_expression}",
+        "score_delta": _score_delta_for_turn(turn),
+        "reason": reason,
+    }
 
 
 def _better_expression_for_turn(turn: Turn, session: SessionState) -> str:
@@ -399,6 +444,11 @@ def _korean_slot_label(slot: str) -> str:
         "for_here_or_to_go": "매장/포장 여부",
     }
     return labels.get(slot, "필요한 정보")
+
+
+def _spoken_normalize(value: str) -> str:
+    words_only = re.sub(r"[^a-z0-9']+", " ", value.lower())
+    return " ".join(words_only.split())
 
 
 def _english_size(value: str) -> str:

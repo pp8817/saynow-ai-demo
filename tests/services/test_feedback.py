@@ -323,6 +323,54 @@ def test_feedback_keeps_short_answers_as_small_plus_one_changes():
     assert feedback["turn_feedback"][1]["score_delta"] == 3
 
 
+def test_feedback_marks_spoken_equivalent_expression_as_already_good():
+    session = SessionState(id="s1", scenario=get_scenario("cafe_order"))
+    session.result = "success"
+    session.turns.append(
+        Turn(
+            id="turn-1",
+            transcript="small, please",
+            filled_slots={"size": "small"},
+            missing_slots=("temperature", "for_here_or_to_go"),
+            assistant_message="Would you like it hot or iced?",
+        )
+    )
+
+    feedback = build_rule_based_feedback(session)
+    turn_feedback = feedback["turn_feedback"][0]
+
+    assert turn_feedback["expression_status"] == "already_good"
+    assert turn_feedback["display_message"] == "이미 충분히 자연스럽게 답했어요."
+    assert turn_feedback["better_expression"] == ""
+    assert turn_feedback["understood_score"] == 85
+    assert turn_feedback["score_delta"] == 0
+    assert turn_feedback["improved_understood_score"] == (
+        turn_feedback["understood_score"]
+    )
+
+
+def test_feedback_accepts_meaningful_spoken_plus_one_expression():
+    session = SessionState(id="s1", scenario=get_scenario("cafe_order"))
+    session.result = "success"
+    session.turns.append(
+        Turn(
+            id="turn-1",
+            transcript="small size",
+            filled_slots={"size": "small"},
+            missing_slots=("temperature", "for_here_or_to_go"),
+            assistant_message="Would you like it hot or iced?",
+        )
+    )
+
+    feedback = build_rule_based_feedback(session)
+    turn_feedback = feedback["turn_feedback"][0]
+
+    assert turn_feedback["expression_status"] == "plus_one"
+    assert turn_feedback["display_message"] == "+1 표현: Small, please."
+    assert turn_feedback["better_expression"] == "Small, please."
+    assert turn_feedback["score_delta"] == 10
+
+
 def test_parse_session_feedback_uses_server_total_score_instead_of_llm_score():
     session = SessionState(id="s1", scenario=get_scenario("cafe_order"))
     session.result = "success"
@@ -390,6 +438,8 @@ def test_feedback_explains_when_answer_does_not_match_current_question():
     assert turn_feedback["heard_as"] == (
         "AI는 사이즈를 물었지만, 사용자는 다른 정보를 먼저 말한 것으로 보여요."
     )
+    assert turn_feedback["expression_status"] == "context_mismatch"
+    assert turn_feedback["display_message"] == "질문에 맞춰 답해보세요: Small, please."
     assert turn_feedback["better_expression"] == "Small, please."
     assert turn_feedback["reason"] == (
         "현재 질문에는 사이즈를 먼저 답해야 해서, 짧게 'Small, please.'라고 "
